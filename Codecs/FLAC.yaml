@@ -1,0 +1,46 @@
+Name: flac
+DisplayName: Free Lossless Audio Codec (FLAC)
+Tags:
+  - lossless
+  - audio
+  - free
+Executable: flac
+SourceFormats:
+  - raw_pcm
+  - wave
+  - aiff
+  - rf64
+  - wave64
+  - legacy_wave
+DestinationFormats:
+  - flac
+Languages:
+  de-DE:
+    CLEVEL: Komprimierungsstärke
+  en-US:
+    CLEVEL: Compression Level
+  en-GB:
+    CLEVEL: Compression Level
+  en-AU:
+    CLEVEL: Compression Level
+  en-NZ:
+    CLEVEL: Compression Level
+Parameters:
+  CompressionLevel:
+    Order: 1
+    DisplayName: "$CLEVEL"
+    Range:
+      Min: 0
+      Max: 8
+    CmdParameter:
+      String: "-"
+      ValueDelimiter: ""
+  FileNameInput:
+    Order: 2
+    DisplayName: "$FILE_IN"
+  FileNameOutput:
+    Order: 3
+    DisplayName: "$FILE_OUT"
+    CmdParameter:
+      String: "-o"
+      ValueDelimiter: " "
