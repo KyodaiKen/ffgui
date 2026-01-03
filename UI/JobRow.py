@@ -4,16 +4,18 @@ from gi.repository import Gtk, Gio, Gdk
 from UI.JobSetupWindow import JobSetupWindow
 
 class JobRow(Gtk.ListBoxRow):
-    def __init__(self, job_id, title, menu_model, app):
+    def __init__(self, job_id, title, job, menu_model, app):
         super().__init__()
         self.job_id = job_id
         self.job_title = title
+        self.job = job
         self.app = app
 
         vbox = Gtk.Box(orientation=Gtk.Orientation.VERTICAL)
         self.set_child(vbox)
 
         self.label = Gtk.Label(xalign=0)
+
         self.label.set_markup(f"<big>{title}</big>")
         self.progress_bar = Gtk.ProgressBar(hexpand=True)
         self.progress_bar.set_show_text(True)
@@ -69,10 +71,10 @@ class JobRow(Gtk.ListBoxRow):
         return [row.job_id for row in selected_rows]
 
     def on_job_setup(self, action, param):
-        ids = self.get_selected_job_ids()
-        print(f"Source clicked for Job IDs: {ids}")
-        if self.app:
-            self.app.wndJobSetupWindow = JobSetupWindow(application=self.app)
+        #ids = self.get_selected_job_ids()
+        #print(f"Source clicked for Job IDs: {ids}")
+        if self.app and self.job:
+            self.app.wndJobSetupWindow = JobSetupWindow(self.job, application=self.app)
             self.app.wndJobSetupWindow.present()
 
     def on_remove(self, action, param):
