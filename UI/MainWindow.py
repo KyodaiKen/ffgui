@@ -3,6 +3,7 @@ gi.require_version("Gdk", "4.0")
 from gi.repository import Gtk, Gio, Gdk
 from Core.Job import Job
 from UI.JobRow import JobRow
+from UI.JobSetupWindow import JobSetupWindow
 
 class MainWindow(Gtk.ApplicationWindow):
     MENU_XML = """
@@ -206,34 +207,43 @@ class MainWindow(Gtk.ApplicationWindow):
         pass
 
     def on_create_job(self, action, param):
-        def on_open_response(dialog, result, data=None):
-            #try:
-            # 'open_finish' returns a Gio.File object
-            file = dialog.open_finish(result)
-            if file is not None:
-                # .get_path() returns the absolute system path as a string
-                file_path = file.get_path()
-                file_name = file.get_basename()
+        # def on_open_response(dialog, result, data=None):
+        #     #try:
+        #     # 'open_finish' returns a Gio.File object
+        #     file = dialog.open_finish(result)
+        #     if file is not None:
+        #         # .get_path() returns the absolute system path as a string
+        #         file_path = file.get_path()
+        #         file_name = file.get_basename()
 
-                print(f"User selected: {file_path}")
+        #         print(f"User selected: {file_path}")
 
-                # Create job
-                job = Job(file_name, file_path)
-                job_id = len(self.app.Jobs) + 1
-                self.app.Jobs[job_id] = job
+        #         # Create job
+        #         job = Job(file_name, file_path)
+        #         job_id = len(self.app.Jobs) + 1
+        #         self.app.Jobs[job_id] = job
 
-                # Add job to list box
-                row = JobRow(job_id, file_name, job, self.context_menu_model, self.app)
-                self.listbox.append(row)
-            else:
-                print("No file was selected.")
+        #         # Add job to list box
+        #         row = JobRow(job_id, file_name, job, self.context_menu_model, self.app)
+        #         self.listbox.append(row)
+        #     else:
+        #         print("No file was selected.")
                     
-            #except Exception as e:
-            #    print(f"Dialog closed or error occurred: {e}")
+        #     #except Exception as e:
+        #     #    print(f"Dialog closed or error occurred: {e}")
 
-        dialog = Gtk.FileDialog.new()
-        dialog.set_title("Open Media File")
-        dialog.open(None, None, on_open_response)
+        # dialog = Gtk.FileDialog.new()
+        # dialog.set_title("Open Media File")
+        # dialog.open(None, None, on_open_response)
+
+        if self.app:
+            job = None
+            wndJobSetupWindow = JobSetupWindow(job, application=self.app)
+            wndJobSetupWindow.present()
+
+            if job:
+                job_row = JobRow(len(self.Jobs), job, self.context_menu_model, self.app)
+                self.listbox.append(job_row)
 
     def on_create_jobs_from_dir(self, action, param):
         pass

@@ -3,7 +3,7 @@ import av.datasets
 
 class Job():
     Name = ""
-    SourceFileName = ""
+    SourceFiles = []
     SourceStreams = {}
     Codec = ""
     DestinationStreams = {}

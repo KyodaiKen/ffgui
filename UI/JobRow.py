@@ -4,10 +4,10 @@ from gi.repository import Gtk, Gio, Gdk
 from UI.JobSetupWindow import JobSetupWindow
 
 class JobRow(Gtk.ListBoxRow):
-    def __init__(self, job_id, title, job, menu_model, app):
+    def __init__(self, job_id, job, menu_model, app):
         super().__init__()
         self.job_id = job_id
-        self.job_title = title
+        self.job_title = job.SourceFileNames[1] if job.SourceFileNames[1] else "No Sources!"
         self.job = job
         self.app = app
 
