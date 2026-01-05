@@ -33,7 +33,7 @@ class SourceStreamRow(Gtk.ListBoxRow):
         self.btn_srch = Gtk.Button(icon_name="search-symbolic", halign=Gtk.Align.END)
         grid.attach(self.btn_srch, 3, 1, 1, 1)
 
-        # Label "Template"
+        # Label "Disposition"
         self.lbl_dsp = Gtk.Label(halign=Gtk.Align.END, label="Disposition:")
         grid.attach(self.lbl_dsp, 1, 2, 1, 1)
 
@@ -41,6 +41,18 @@ class SourceStreamRow(Gtk.ListBoxRow):
         self.ent_dsp = Gtk.Entry(hexpand=True, halign=Gtk.Align.FILL)
         grid.attach(self.ent_dsp, 2, 2, 1, 1)
 
-        # Button for search
+        # Button for adding
         self.btn_add_dsp = Gtk.Button(icon_name="list-add", halign=Gtk.Align.END)
         grid.attach(self.btn_add_dsp, 3, 2, 1, 1)
+
+        # Label "Language"
+        self.lbl_lng = Gtk.Label(halign=Gtk.Align.END, label="Language:")
+        grid.attach(self.lbl_lng, 1, 3, 1, 1)
+
+        # Entry for language
+        self.ent_lng = Gtk.Entry(hexpand=True, halign=Gtk.Align.FILL)
+        grid.attach(self.ent_lng, 2, 3, 1, 1)
+
+        # Button for search
+        self.btn_srch_lng = Gtk.Button(icon_name="search-symbolic", halign=Gtk.Align.END)
+        grid.attach(self.btn_srch_lng, 3, 3, 1, 1)

@@ -41,6 +41,7 @@ class JobSetupWindow(Gtk.ApplicationWindow):
         self.grid.props.margin_end = 6
         self.grid.props.margin_top = 6
         self.grid.props.margin_bottom = 6
+        self.set_child(self.grid)
 
         # Row for Name
         self.lbl_name = Gtk.Label(halign=Gtk.Align.END, valign=Gtk.Align.FILL)
@@ -89,13 +90,27 @@ class JobSetupWindow(Gtk.ApplicationWindow):
         self.lst_source_streams.set_name("streams_list")
         self.scroll_streams = Gtk.ScrolledWindow(vexpand=True)
         self.scroll_streams.set_child(self.lst_source_streams)
-        self.scroll_streams.set_size_request(-1, 160)
+        self.scroll_streams.set_size_request(-1, 120)
         self.grid.attach(self.lbl_strmlst, 0, 2, 1, 1)
         self.grid.attach(self.scroll_streams, 1, 2, 2, 1)   
 
-        self.set_child(self.grid)
+        # Row for Destination Streams
+        self.lbl_dest_strmlst = Gtk.Label(halign=Gtk.Align.END, valign=Gtk.Align.START)
+        self.lbl_dest_strmlst.set_text("Destination Streams: ")
+        self.lst_dest_streams = Gtk.ListBox(hexpand = True)
+        self.lst_dest_streams.set_selection_mode(Gtk.SelectionMode.NONE)
+        self.lst_dest_streams.set_name("streams_list")
+        self.scroll_dest_streams = Gtk.ScrolledWindow()
+        self.scroll_dest_streams.set_child(self.lst_dest_streams)
+        self.scroll_dest_streams.set_size_request(-1, 140)
+        self.grid.attach(self.lbl_dest_strmlst, 0, 3, 1, 1)
+        self.grid.attach(self.scroll_dest_streams, 1, 3, 2, 1)   
 
-        # --- Drag and Drop Logic ---
+        self.btn_ok = Gtk.Button(label="OK")
+        self.btn_ok.add_css_class("suggested-action")
+        self.grid.attach(self.btn_ok, 2, 4, 1, 1)
+
+        # Drag and Drop Logic
         drop_target = Gtk.DropTarget.new(Gdk.FileList, Gdk.DragAction.COPY)
         drop_target.connect("drop", self.on_file_drop)
         self.lst_source_files.add_controller(drop_target)
@@ -149,7 +164,8 @@ class JobSetupWindow(Gtk.ApplicationWindow):
                 self.selected_streams[key] = {
                     "active": row.chk.get_active(),
                     "template": row.ent_tpl.get_text(),
-                    "disposition": row.ent_dsp.get_text()
+                    "disposition": row.ent_dsp.get_text(),
+                    "language": row.ent_lng.get_text()
                 }
             row = row.get_next_sibling()
 
@@ -173,7 +189,7 @@ class JobSetupWindow(Gtk.ApplicationWindow):
             # Add a non-selectable Header Row for the Filename
             filename = source_path.split('/')[-1]
             header_label = Gtk.Label(label=f"<big><b>{filename}</b></big>", use_markup=True, xalign=0)
-            header_label.set_margin_top(6)
+            # header_label.set_margin_top(6)
             
             header_row = Gtk.ListBoxRow(selectable=False)
             header_row.set_child(header_label)
@@ -192,6 +208,7 @@ class JobSetupWindow(Gtk.ApplicationWindow):
                         row.chk.set_active(data["active"])
                         row.ent_tpl.set_text(data["template"])
                         row.ent_dsp.set_text(data["disposition"])
+                        row.ent_lng.set_text(data['language'])
                     else:
                         # Default settings for brand new files
                         if stream.type in ['video', 'audio']:
