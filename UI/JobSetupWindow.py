@@ -2,18 +2,22 @@ import gi
 gi.require_version("Gdk", "4.0")
 from gi.repository import Gtk, Gio, Gdk, Pango
 from UI.SourceStreamRow import SourceStreamRow
+from Core.Utils import format_duration, get_file_title
 import av
 
 class JobSetupWindow(Gtk.ApplicationWindow):
-    def __init__(self, job, **kwargs):
+    def __init__(self, parent_window, job, **kwargs):
         super().__init__(**kwargs, title="Job Setup")
         self.job = job
         self.source_paths = []
         # Structure: {(file_path, stream_index): {"template": "...", "disposition": "...", "active": True}}
         self.selected_streams = {}
+        self.parent_window = parent_window
 
         # Set window size
         self.set_size_request(640, 480)
+        self.set_transient_for(parent_window)
+        self.set_modal(True)
 
         # Create a CSS Provider
         css_provider = Gtk.CssProvider()
@@ -181,44 +185,67 @@ class JobSetupWindow(Gtk.ApplicationWindow):
         return None
     
     def get_sources(self):
-        # Clear the stream list entirely before rebuilding
+        # 1. Save current state of entries before we clear them
         self.save_stream_state()
         self.lst_source_streams.remove_all()
 
-        for src_idx, source_path in enumerate(self.source_paths):
-            # Add a non-selectable Header Row for the Filename
-            filename = source_path.split('/')[-1]
-            header_label = Gtk.Label(label=f"<big><b>{filename}</b></big>", use_markup=True, xalign=0)
-            # header_label.set_margin_top(6)
+        for source_path in self.source_paths:
+            file_title = get_file_title(source_path)
             
-            header_row = Gtk.ListBoxRow(selectable=False)
-            header_row.set_child(header_label)
-            self.lst_source_streams.append(header_row)
+            # Open file to get container-level metadata
+            try:
+                with av.open(source_path) as media:
+                    # Calculate and format duration
+                    duration_secs = float(media.duration / 1000000) if media.duration else 0
+                    duration_str = format_duration(duration_secs)
 
-            # Open file and add streams
-            # try:
-            with av.open(source_path) as media:
-                for stm_idx, stream in enumerate(media.streams):
-                    desc, sdesc = self.get_stream_description(stream)
-                    row = SourceStreamRow(desc, source_path, stm_idx)
-                    
-                    key = (source_path, stm_idx)
-                    if key in self.selected_streams:
-                        data = self.selected_streams[key]
-                        row.chk.set_active(data["active"])
-                        row.ent_tpl.set_text(data["template"])
-                        row.ent_dsp.set_text(data["disposition"])
-                        row.ent_lng.set_text(data['language'])
-                    else:
-                        # Default settings for brand new files
-                        if stream.type in ['video', 'audio']:
-                            row.chk.set_active(True)
+                    # Create a container box for the header (Title on Left, Duration on Right)
+                    header_hbox = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=12)
+                    header_hbox.set_margin_top(6)
+                    header_hbox.set_margin_end(24)
+                    header_hbox.set_margin_bottom(3)
+
+                    # Filename Label
+                    lbl_file = Gtk.Label(label=f"<big><b>{file_title}</b></big>", 
+                                         use_markup=True, xalign=0, hexpand=True)
+                    lbl_file.set_ellipsize(Pango.EllipsizeMode.END)
+                    header_hbox.append(lbl_file)
+
+                    # Duration Label (Normal size)
+                    lbl_dur = Gtk.Label(label=duration_str, xalign=1)
+                    header_hbox.append(lbl_dur)
+
+                    header_row = Gtk.ListBoxRow(selectable=False)
+                    header_row.set_child(header_hbox)
+                    self.lst_source_streams.append(header_row)
+
+                    # Add individual streams for this file
+                    for stm_idx, stream in enumerate(media.streams):
+                        desc, sdesc = self.get_stream_description(stream)
+                        row = SourceStreamRow(desc, source_path, stm_idx, self)
                         
-                    self.lst_source_streams.append(row)
-            # except Exception as e:
-            #     error_row = Gtk.ListBoxRow(selectable=False)
-            #     error_row.set_child(Gtk.Label(label=f"  Error: {e}", xalign=0))
-            #     self.lst_source_streams.append(error_row)
+                        # Restore from cache if user had already typed something here
+                        key = (source_path, stm_idx)
+                        if key in self.selected_streams:
+                            data = self.selected_streams[key]
+                            row.chk.set_active(data["active"])
+                            row.ent_tpl.set_text(data["template"])
+                            row.ent_dsp.set_text(data["disposition"])
+                            row.ent_lng.set_text(data['language'])
+                        else:
+                            # Standard default for fresh files
+                            if stream.type in ['video', 'audio']:
+                                row.chk.set_active(True)
+                            
+                        self.lst_source_streams.append(row)
+
+            except Exception as e:
+                # Handle corrupted files or unsupported formats gracefully in the UI
+                error_row = Gtk.ListBoxRow(selectable=False)
+                error_label = Gtk.Label(label=f"  Error opening {file_title}: {e}", xalign=0)
+                error_label.add_css_class("error") # Assuming you have an error style
+                error_row.set_child(error_label)
+                self.lst_source_streams.append(error_row)
 
     def sync_data_model(self):
         """Rebuild the list based on the current UI order"""

@@ -1,12 +1,15 @@
 import gi
 gi.require_version("Gdk", "4.0")
 from gi.repository import Gtk, Pango
+from UI.DispositionPickerWindow import DispositionPickerWindow
+from UI.LanguagePickerWindow import LanguagePickerWindow
 
 class SourceStreamRow(Gtk.ListBoxRow):
-    def __init__(self, stream_descr, source_path, stream_index):
+    def __init__(self, stream_descr, source_path, stream_index, parent_window):
         super().__init__()
         self.source_path = source_path
         self.stream_index = stream_index
+        self.parent_window = parent_window
 
         # Layout
         grid = Gtk.Grid(orientation=Gtk.Orientation.VERTICAL, row_spacing=6, column_spacing=6)
@@ -18,6 +21,7 @@ class SourceStreamRow(Gtk.ListBoxRow):
 
         # Label for stream
         self.lbl_strm = Gtk.Label(xalign=0, label=f"<b>{stream_descr}</b>", use_markup=True,)
+        self.lbl_strm.set_margin_end(24)
         self.lbl_strm.set_ellipsize(Pango.EllipsizeMode.END)
         grid.attach(self.lbl_strm, 1, 0, 3, 1)
 
@@ -31,6 +35,7 @@ class SourceStreamRow(Gtk.ListBoxRow):
 
         # Button for search
         self.btn_srch = Gtk.Button(icon_name="search-symbolic", halign=Gtk.Align.END)
+        self.btn_srch.set_margin_end(24)
         grid.attach(self.btn_srch, 3, 1, 1, 1)
 
         # Label "Disposition"
@@ -42,8 +47,10 @@ class SourceStreamRow(Gtk.ListBoxRow):
         grid.attach(self.ent_dsp, 2, 2, 1, 1)
 
         # Button for adding
-        self.btn_add_dsp = Gtk.Button(icon_name="list-add", halign=Gtk.Align.END)
+        self.btn_add_dsp = Gtk.Button(icon_name="search-symbolic", halign=Gtk.Align.END)
+        self.btn_add_dsp.set_margin_end(24)
         grid.attach(self.btn_add_dsp, 3, 2, 1, 1)
+        self.btn_add_dsp.connect("clicked", self.on_add_dsp_click)
 
         # Label "Language"
         self.lbl_lng = Gtk.Label(halign=Gtk.Align.END, label="Language:")
@@ -55,4 +62,30 @@ class SourceStreamRow(Gtk.ListBoxRow):
 
         # Button for search
         self.btn_srch_lng = Gtk.Button(icon_name="search-symbolic", halign=Gtk.Align.END)
+        self.btn_srch_lng.set_margin_end(24)
         grid.attach(self.btn_srch_lng, 3, 3, 1, 1)
+        self.btn_srch_lng.connect("clicked", self.on_search_lng_click)
+
+    def on_add_dsp_click(self, button):
+        # We pass a 'on_select' function to the picker
+        self.pw = DispositionPickerWindow(
+            self.parent_window,
+            self.ent_dsp.get_text(),
+            on_select=self.apply_disposition # New callback
+        )
+        self.pw.present()
+
+    def apply_disposition(self, selected_text):
+        self.ent_dsp.set_text(selected_text)
+
+    def on_search_lng_click(self, button):
+        # We pass the callback exactly like we did for the Disposition picker
+        self.pw = LanguagePickerWindow(
+            parent_window = self.parent_window,
+            current_val=self.ent_lng.get_text(),
+            on_select=self.apply_language
+        )
+        self.pw.present()
+
+    def apply_language(self, selected_code):
+        self.ent_lng.set_text(selected_code)

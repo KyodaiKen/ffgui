@@ -238,7 +238,7 @@ class MainWindow(Gtk.ApplicationWindow):
 
         if self.app:
             job = None
-            wndJobSetupWindow = JobSetupWindow(job, application=self.app)
+            wndJobSetupWindow = JobSetupWindow(self, job, application=self.app)
             wndJobSetupWindow.present()
 
             if job:
