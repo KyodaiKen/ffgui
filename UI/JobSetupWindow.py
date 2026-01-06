@@ -166,10 +166,10 @@ class JobSetupWindow(Gtk.ApplicationWindow):
         btn_edit.connect("clicked", self.on_change_container_clicked)
         tag.append(btn_edit)
 
-        btn_global_meta = Gtk.Button(icon_name="tag-symbolic", tooltip_text="Setup Container Metadata")
-        btn_global_meta.connect("clicked", self.on_manage_global_meta)
-        btn_global_meta.set_has_frame(False)
-        tag.append(btn_global_meta)
+        self.btn_global_meta = Gtk.Button(icon_name="tag-symbolic", tooltip_text="Setup Container Metadata")
+        self.btn_global_meta.connect("clicked", self.on_manage_global_meta)
+        self.btn_global_meta.set_has_frame(False)
+        tag.append(self.btn_global_meta)
         
         self.container_box.append(tag)
 
@@ -272,6 +272,10 @@ class JobSetupWindow(Gtk.ApplicationWindow):
                     # Grab metadata
                     if not self.global_metadata and media.metadata:
                         self.global_metadata = dict(media.metadata)
+                        if self.global_metadata:
+                            self.btn_global_meta.add_css_class("suggested-action")
+                        else:
+                            self.btn_global_meta.remove_css_class("suggested-action")
 
                     # Create a container box for the header (Title on Left, Duration on Right)
                     header_hbox = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=12)

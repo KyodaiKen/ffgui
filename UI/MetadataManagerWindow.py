@@ -6,7 +6,8 @@ class MetadataManagerWindow(Gtk.ApplicationWindow):
     def __init__(self, parent_window, current_metadata, on_save, **kwargs):
         super().__init__(**kwargs, title="Manage Metadata")
         self.on_save = on_save
-        self.set_default_size(400, 450)
+
+        self.set_size_request(344, 400)
         self.set_transient_for(parent_window)
         self.set_modal(True)
 
@@ -55,6 +56,7 @@ class MetadataManagerWindow(Gtk.ApplicationWindow):
         ent_key = Gtk.Entry(placeholder_text="Key", text=str(key), hexpand=True)
         ent_val = Gtk.Entry(placeholder_text="Value", text=str(value), hexpand=True)
         btn_del = Gtk.Button(icon_name="user-trash-symbolic")
+        btn_del.set_margin_end(24)
         
         row_box.append(ent_key)
         row_box.append(ent_val)

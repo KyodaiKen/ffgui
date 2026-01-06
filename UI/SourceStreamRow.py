@@ -23,7 +23,6 @@ class SourceStreamRow(Gtk.ListBoxRow):
 
         # Label for stream
         self.lbl_strm = Gtk.Label(xalign=0, label=f"<b>{stream_descr}</b>", use_markup=True,)
-        self.lbl_strm.set_margin_end(24)
         self.lbl_strm.set_ellipsize(Pango.EllipsizeMode.END)
         grid.attach(self.lbl_strm, 1, 0, 2, 1)
 
