@@ -80,7 +80,7 @@ class BaseCodecPickerWindow(Gtk.ApplicationWindow):
                 top_hbox = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=12)
                 
                 lbl_name = Gtk.Label(xalign=0)
-                lbl_name.set_markup(f"<b>{f["id"]}</b>")
+                lbl_name.set_markup(f"<b>{c["id"]}</b>")
                 lbl_name.set_width_chars(12)
                 
                 lbl_long = Gtk.Label(label=c["long"], xalign=0)

@@ -31,6 +31,7 @@ class TemplatePickerWindow(Gtk.ApplicationWindow):
         self.lst_templates = Gtk.ListBox()
         self.lst_templates.set_selection_mode(Gtk.SelectionMode.SINGLE)
         self.lst_templates.add_css_class("boxed-list")
+        self.lst_templates.set_activate_on_single_click(False)
         self.lst_templates.connect("row-activated", lambda *_: self.on_ok_clicked())
         
         scroll = Gtk.ScrolledWindow(vexpand=True)
