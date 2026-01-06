@@ -40,11 +40,14 @@ class SourceStreamRow(Gtk.ListBoxRow):
 
         # Entry for template
         self.ent_tpl = Gtk.Entry(hexpand=True, halign=Gtk.Align.FILL)
+        self.ent_tpl.set_editable(False)
+        self.ent_tpl.set_can_focus(False)
         grid.attach(self.ent_tpl, 2, 1, 1, 1)
 
         # Button for search
         self.btn_srch = Gtk.Button(icon_name="search-symbolic", halign=Gtk.Align.END)
         self.btn_srch.set_margin_end(24)
+        self.btn_srch.connect("clicked", self.on_search_tpl_click)
         grid.attach(self.btn_srch, 3, 1, 1, 1)
 
         # Label "Disposition"
@@ -112,3 +115,15 @@ class SourceStreamRow(Gtk.ListBoxRow):
     def save_meta(self, meta):
         self.stream_metadata = meta
         self.update_meta_button_style()
+
+    def on_search_tpl_click(self, button):
+        from UI.TemplatePickerWindow import TemplatePickerWindow
+        self.pw = TemplatePickerWindow(
+            parent_window=self.parent_window,
+            current_val=self.ent_tpl.get_text(),
+            on_select=self.apply_template
+        )
+        self.pw.present()
+
+    def apply_template(self, template_name):
+        self.ent_tpl.set_text(template_name)
