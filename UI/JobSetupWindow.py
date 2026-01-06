@@ -126,16 +126,51 @@ class JobSetupWindow(Gtk.ApplicationWindow):
         self.grid.attach(self.lbl_dest_strmlst, 0, 3, 1, 1)
         self.grid.attach(self.scroll_dest_streams, 1, 3, 2, 1)   
 
-        # Row for Output Container (Media Container)
-        self.lbl_container = Gtk.Label(label="Output Container: ", halign=Gtk.Align.END)
-        self.grid.attach(self.lbl_container, 0, 4, 1, 1)
+        # Row 4: Output Configuration Header
+        self.lbl_output = Gtk.Label(label="Output Settings: ", halign=Gtk.Align.END, valign=Gtk.Align.START)
+        self.lbl_output.set_margin_top(4) # Align with the header text
+        self.grid.attach(self.lbl_output, 0, 4, 1, 1)
 
-        # Container for the "Selected Tag"
-        self.container_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=8)
-        self.grid.attach(self.container_box, 1, 4, 2, 1)
+        # Create a Sub-Grid for grouped output elements
+        self.output_subgrid = Gtk.Grid(column_spacing=12, row_spacing=4, hexpand=True)
+        self.grid.attach(self.output_subgrid, 1, 4, 2, 1)
 
-        # Current selection state
-        self.selected_container = "matroska" # Default
+        # --- Headers ---
+        lbl_head_cont = Gtk.Label(xalign=0)
+        lbl_head_cont.set_markup("<b>Container Format</b>")
+        
+        lbl_head_file = Gtk.Label(xalign=0)
+        lbl_head_file.set_markup("<b>Filename</b>")
+        
+        lbl_head_dir = Gtk.Label(xalign=0)
+        lbl_head_dir.set_markup("<b>Output Directory</b>")
+
+        self.output_subgrid.attach(lbl_head_cont, 0, 0, 1, 1)
+        self.output_subgrid.attach(lbl_head_file, 1, 0, 1, 1)
+        self.output_subgrid.attach(lbl_head_dir, 2, 0, 1, 1)
+
+        # --- Widgets ---
+
+        # 1. Container selection (the Pill)
+        self.container_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=0)
+        self.output_subgrid.attach(self.container_box, 0, 1, 1, 1)
+
+        # 2. Filename Override
+        self.entry_output_filename = Gtk.Entry(hexpand=True)
+        self.output_subgrid.attach(self.entry_output_filename, 1, 1, 1, 1)
+
+        # 3. Output Directory Picker
+        self.output_dir_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=4)
+        self.entry_output_dir = Gtk.Entry(hexpand=True)
+        btn_dir = Gtk.Button(icon_name="folder-open-symbolic")
+        btn_dir.connect("clicked", self.on_select_output_dir_clicked)
+        
+        self.output_dir_box.append(self.entry_output_dir)
+        self.output_dir_box.append(btn_dir)
+        self.output_subgrid.attach(self.output_dir_box, 2, 1, 1, 1)
+
+        # Initial UI Refresh
+        self.selected_container = "matroska" 
         self.update_container_ui()
 
         self.btn_ok = Gtk.Button(label="OK")
@@ -353,8 +388,17 @@ class JobSetupWindow(Gtk.ApplicationWindow):
         label.set_width_chars(10)
         self.lst_source_files.append(label)
 
+        path_str = file.get_path()
+
+        # If this is the first file, set up defaults
         if self.entry_name.get_text() == "":
-            self.entry_name.set_text(get_file_title(file.get_path()))
+            file_title = get_file_title(path_str)
+            self.entry_name.set_text(file_title)
+            
+            # Default output directory to the source directory
+            if self.entry_output_dir.get_text() == "":
+                import os
+                self.entry_output_dir.set_text(os.path.dirname(path_str))
 
     def on_file_drop(self, target, value, x, y):
         # 'value' will be a Gdk.FileList object
@@ -462,3 +506,21 @@ class JobSetupWindow(Gtk.ApplicationWindow):
     def on_remove_all(self, button):
         self.lst_source_files.remove_all()
         self.sync_data_model()
+
+    def on_select_output_dir_clicked(self, btn):
+        dialog = Gtk.FileDialog.new()
+        dialog.set_title("Select Output Directory")
+        # Set initial folder if entry has text
+        current_path = self.entry_output_dir.get_text()
+        if current_path:
+            dialog.set_initial_folder(Gio.File.new_for_path(current_path))
+            
+        dialog.select_folder(self, None, self.on_dir_dialog_finish)
+
+    def on_dir_dialog_finish(self, dialog, result):
+        try:
+            folder = dialog.select_folder_finish(result)
+            if folder:
+                self.entry_output_dir.set_text(folder.get_path())
+        except Exception as e:
+            print(f"Folder selection cancelled: {e}")
