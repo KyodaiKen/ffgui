@@ -207,35 +207,6 @@ class MainWindow(Gtk.ApplicationWindow):
         pass
 
     def on_create_job(self, action, param):
-        # def on_open_response(dialog, result, data=None):
-        #     #try:
-        #     # 'open_finish' returns a Gio.File object
-        #     file = dialog.open_finish(result)
-        #     if file is not None:
-        #         # .get_path() returns the absolute system path as a string
-        #         file_path = file.get_path()
-        #         file_name = file.get_basename()
-
-        #         print(f"User selected: {file_path}")
-
-        #         # Create job
-        #         job = Job(file_name, file_path)
-        #         job_id = len(self.app.Jobs) + 1
-        #         self.app.Jobs[job_id] = job
-
-        #         # Add job to list box
-        #         row = JobRow(job_id, file_name, job, self.context_menu_model, self.app)
-        #         self.listbox.append(row)
-        #     else:
-        #         print("No file was selected.")
-                    
-        #     #except Exception as e:
-        #     #    print(f"Dialog closed or error occurred: {e}")
-
-        # dialog = Gtk.FileDialog.new()
-        # dialog.set_title("Open Media File")
-        # dialog.open(None, None, on_open_response)
-
         if self.app:
             job = None
             wndJobSetupWindow = JobSetupWindow(self, job, application=self.app)

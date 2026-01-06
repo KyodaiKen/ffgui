@@ -2,6 +2,7 @@ import gi
 gi.require_version("Gdk", "4.0")
 from gi.repository import Gtk, Gio, Gdk, Pango
 from UI.SourceStreamRow import SourceStreamRow
+from UI.ContainerPickerWindow import ContainerPickerWindow
 from Core.Utils import format_duration, get_file_title
 import av
 
@@ -29,6 +30,18 @@ class JobSetupWindow(Gtk.ApplicationWindow):
             /* Optional: ensure they don't look 'selected' either since mode is NONE */
             #streams_list row:selected {
                 background-color: transparent;
+            }
+                                    
+            .container-tag {
+                background-color: alpha(@theme_fg_color, 0.05);
+                border: 1px solid mix(@theme_fg_color, @theme_bg_color, 0.8);
+                border-radius: 6px;
+                padding: 2px;
+            }
+            .container-tag label {
+                margin: 0 6px 0 0;
+                font-weight: bold;
+                line-height: 100%;
             }
         """, -1)
 
@@ -110,14 +123,55 @@ class JobSetupWindow(Gtk.ApplicationWindow):
         self.grid.attach(self.lbl_dest_strmlst, 0, 3, 1, 1)
         self.grid.attach(self.scroll_dest_streams, 1, 3, 2, 1)   
 
+        # Row for Output Container (Media Container)
+        self.lbl_container = Gtk.Label(label="Output Container: ", halign=Gtk.Align.END)
+        self.grid.attach(self.lbl_container, 0, 4, 1, 1)
+
+        # Container for the "Selected Tag"
+        self.container_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=8)
+        self.grid.attach(self.container_box, 1, 4, 2, 1)
+
+        # Current selection state
+        self.selected_container = "matroska" # Default
+        self.update_container_ui()
+
         self.btn_ok = Gtk.Button(label="OK")
         self.btn_ok.add_css_class("suggested-action")
-        self.grid.attach(self.btn_ok, 2, 4, 1, 1)
+        self.grid.attach(self.btn_ok, 2, 5, 1, 1)
 
         # Drag and Drop Logic
         drop_target = Gtk.DropTarget.new(Gdk.FileList, Gdk.DragAction.COPY)
         drop_target.connect("drop", self.on_file_drop)
         self.lst_source_files.add_controller(drop_target)
+
+    def update_container_ui(self):
+        """Refreshes the 'pill' display for the container"""
+        while child := self.container_box.get_first_child():
+            self.container_box.remove(child)
+        
+        # Create the pill (similar to DispositionTag but specific for the one choice)
+        tag = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=0)
+        tag.add_css_class("container-tag") 
+        
+        lbl = Gtk.Label(label=self.selected_container)
+        lbl.set_margin_start(8)
+        lbl.set_margin_end(8)
+        tag.append(lbl)
+        
+        btn_edit = Gtk.Button(icon_name="search-symbolic")
+        btn_edit.set_has_frame(False)
+        btn_edit.connect("clicked", self.on_change_container_clicked)
+        tag.append(btn_edit)
+        
+        self.container_box.append(tag)
+
+    def on_change_container_clicked(self, btn):
+        picker = ContainerPickerWindow(self, self.selected_container, self.apply_container)
+        picker.present()
+
+    def apply_container(self, new_format):
+        self.selected_container = new_format
+        self.update_container_ui()
 
     def get_stream_description(self, stream):
         # Logic to find a valid name/title

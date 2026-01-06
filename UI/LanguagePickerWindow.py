@@ -115,7 +115,7 @@ class LanguagePickerWindow(Gtk.ApplicationWindow):
             hbox.set_margin_bottom(6)
             
             lbl_code = Gtk.Label(xalign=0)
-            lbl_code.set_markup(f"<span face='monospace'><b>{item['code']}</b></span>")
+            lbl_code.set_markup(f"<b>{item['code']}</b>")
             lbl_code.set_width_chars(5) 
             
             lbl_name = Gtk.Label(label=item['name'], xalign=0)
