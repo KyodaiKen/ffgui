@@ -1,15 +1,17 @@
 import gi
 gi.require_version("Gdk", "4.0")
 from gi.repository import Gtk, Pango
+from UI.MetadataManagerWindow import MetadataManagerWindow
 from UI.DispositionPickerWindow import DispositionPickerWindow
 from UI.LanguagePickerWindow import LanguagePickerWindow
 
 class SourceStreamRow(Gtk.ListBoxRow):
-    def __init__(self, stream_descr, source_path, stream_index, parent_window):
+    def __init__(self, stream_descr, source_path, stream_index, parent_window, initial_metadata):
         super().__init__()
         self.source_path = source_path
         self.stream_index = stream_index
         self.parent_window = parent_window
+        self.stream_metadata = initial_metadata if initial_metadata is not None else {}
 
         # Layout
         grid = Gtk.Grid(orientation=Gtk.Orientation.VERTICAL, row_spacing=6, column_spacing=6)
@@ -23,7 +25,15 @@ class SourceStreamRow(Gtk.ListBoxRow):
         self.lbl_strm = Gtk.Label(xalign=0, label=f"<b>{stream_descr}</b>", use_markup=True,)
         self.lbl_strm.set_margin_end(24)
         self.lbl_strm.set_ellipsize(Pango.EllipsizeMode.END)
-        grid.attach(self.lbl_strm, 1, 0, 3, 1)
+        grid.attach(self.lbl_strm, 1, 0, 2, 1)
+
+        # Tag button for stream meta data
+        self.btn_meta = Gtk.Button(icon_name="tag-symbolic", halign=Gtk.Align.END, tooltip_text="Setup Stream Metadata")
+        self.btn_meta.set_margin_end(24)
+        grid.attach(self.btn_meta, 3, 0, 1, 1) 
+        self.btn_meta.connect("clicked", self.on_manage_meta)
+        # Highlight button if metadata exists initially
+        self.update_meta_button_style()
 
         # Label "Template"
         self.lbl_tpl = Gtk.Label(halign=Gtk.Align.END, label="Transcoding Template:")
@@ -89,3 +99,17 @@ class SourceStreamRow(Gtk.ListBoxRow):
 
     def apply_language(self, selected_code):
         self.ent_lng.set_text(selected_code)
+
+    def update_meta_button_style(self):
+        if self.stream_metadata:
+            self.btn_meta.add_css_class("suggested-action")
+        else:
+            self.btn_meta.remove_css_class("suggested-action")
+
+    def on_manage_meta(self, _):
+        win = MetadataManagerWindow(self.parent_window, self.stream_metadata, self.save_meta)
+        win.present()
+
+    def save_meta(self, meta):
+        self.stream_metadata = meta
+        self.update_meta_button_style()

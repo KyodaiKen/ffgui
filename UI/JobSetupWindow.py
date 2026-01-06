@@ -3,6 +3,7 @@ gi.require_version("Gdk", "4.0")
 from gi.repository import Gtk, Gio, Gdk, Pango
 from UI.SourceStreamRow import SourceStreamRow
 from UI.ContainerPickerWindow import ContainerPickerWindow
+from UI.MetadataManagerWindow import MetadataManagerWindow
 from Core.Utils import format_duration, get_file_title
 import av
 
@@ -13,10 +14,12 @@ class JobSetupWindow(Gtk.ApplicationWindow):
         self.source_paths = []
         # Structure: {(file_path, stream_index): {"template": "...", "disposition": "...", "active": True}}
         self.selected_streams = {}
+        self.global_metadata = {}
         self.parent_window = parent_window
 
         # Set window size
         self.set_size_request(640, 480)
+        self.set_default_size(1024, 700)
         self.set_transient_for(parent_window)
         self.set_modal(True)
 
@@ -158,10 +161,15 @@ class JobSetupWindow(Gtk.ApplicationWindow):
         lbl.set_margin_end(8)
         tag.append(lbl)
         
-        btn_edit = Gtk.Button(icon_name="search-symbolic")
+        btn_edit = Gtk.Button(icon_name="search-symbolic", tooltip_text="Search For Container")
         btn_edit.set_has_frame(False)
         btn_edit.connect("clicked", self.on_change_container_clicked)
         tag.append(btn_edit)
+
+        btn_global_meta = Gtk.Button(icon_name="tag-symbolic", tooltip_text="Setup Container Metadata")
+        btn_global_meta.connect("clicked", self.on_manage_global_meta)
+        btn_global_meta.set_has_frame(False)
+        tag.append(btn_global_meta)
         
         self.container_box.append(tag)
 
@@ -172,6 +180,13 @@ class JobSetupWindow(Gtk.ApplicationWindow):
     def apply_container(self, new_format):
         self.selected_container = new_format
         self.update_container_ui()
+
+    def on_manage_global_meta(self, _):
+        win = MetadataManagerWindow(self, self.global_metadata, self.save_global_meta)
+        win.present()
+
+    def save_global_meta(self, meta):
+        self.global_metadata = meta
 
     def get_stream_description(self, stream):
         # Logic to find a valid name/title
@@ -223,7 +238,8 @@ class JobSetupWindow(Gtk.ApplicationWindow):
                     "active": row.chk.get_active(),
                     "template": row.ent_tpl.get_text(),
                     "disposition": row.ent_dsp.get_text(),
-                    "language": row.ent_lng.get_text()
+                    "language": row.ent_lng.get_text(),
+                    "metadata": row.stream_metadata
                 }
             row = row.get_next_sibling()
 
@@ -253,6 +269,10 @@ class JobSetupWindow(Gtk.ApplicationWindow):
                     duration_secs = float(media.duration / 1000000) if media.duration else 0
                     duration_str = format_duration(duration_secs)
 
+                    # Grab metadata
+                    if not self.global_metadata and media.metadata:
+                        self.global_metadata = dict(media.metadata)
+
                     # Create a container box for the header (Title on Left, Duration on Right)
                     header_hbox = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=12)
                     header_hbox.set_margin_top(6)
@@ -276,7 +296,11 @@ class JobSetupWindow(Gtk.ApplicationWindow):
                     # Add individual streams for this file
                     for stm_idx, stream in enumerate(media.streams):
                         desc, sdesc = self.get_stream_description(stream)
-                        row = SourceStreamRow(desc, source_path, stm_idx, self)
+                        # Extract existing metadata from PyAV
+                        existing_meta = dict(stream.metadata) if stream.metadata else {}
+                        
+                        # Create the row with the metadata
+                        row = SourceStreamRow(desc, source_path, stm_idx, self, initial_metadata=existing_meta)
                         
                         # Restore from cache if user had already typed something here
                         key = (source_path, stm_idx)
@@ -286,6 +310,10 @@ class JobSetupWindow(Gtk.ApplicationWindow):
                             row.ent_tpl.set_text(data["template"])
                             row.ent_dsp.set_text(data["disposition"])
                             row.ent_lng.set_text(data['language'])
+                            # Restore metadata from cache if it exists there
+                            if "metadata" in data:
+                                row.stream_metadata = data["metadata"]
+                                row.update_meta_button_style()
                         else:
                             # Standard default for fresh files
                             if stream.type in ['video', 'audio']:
@@ -320,6 +348,9 @@ class JobSetupWindow(Gtk.ApplicationWindow):
         label.set_hexpand(True)
         label.set_width_chars(10)
         self.lst_source_files.append(label)
+
+        if self.entry_name.get_text() == "":
+            self.entry_name.set_text(get_file_title(file.get_path()))
 
     def on_file_drop(self, target, value, x, y):
         # 'value' will be a Gdk.FileList object

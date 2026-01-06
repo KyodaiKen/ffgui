@@ -127,22 +127,6 @@ class MainWindow(Gtk.ApplicationWindow):
         builder = Gtk.Builder.new_from_string(self.CONTEXT_MENU_XML, -1)
         self.context_menu_model = builder.get_object("context-menu")
 
-        # Add dummy entries for testing
-        # dummy_list = [
-        #     (1, "Fun.mp4", 0.375, "37.50%, 3000/8000 frames, 500 FPS, ETA 6s"),
-        #     (2, "Scary Movie 2.mp4", 0.5, "50.00%, 2355/4711 frames, 480 FPS, ETA 5s"),
-        #     (3, "The Song.flac", 0.25, "25.00%, 2m 0s / 4m 0s, 100x, ETA <1s"),
-        #     (4, "My Shoes.flac", 0.25, "25.00%, 2m 0s / 4m 0s, 100x, ETA <1s")
-        # ]
-
-        # app = self.get_application()
-
-        # for job_id, title, progress, progress_text in dummy_list:
-        #     row = self.JobRow(job_id, title, context_menu_model, app)
-        #     row.set_progress(progress, progress_text)
-        #     self.listbox.append(row)
-        #     app.Jobs[job_id] = Job(title, title)
-
         # Inner bottom box for bottom controls
         box_bottom = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=2)
         box_bottom.props.margin_start = 2
