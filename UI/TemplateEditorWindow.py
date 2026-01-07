@@ -4,7 +4,7 @@ from gi.repository import Gtk, Gdk, Pango
 from UI.CodecPickerWindow import CodecPickerWindow
 from UI.ParameterPickerWindow import ParameterPickerWindow
 from UI.Core import UICore
-import os
+import copy
 import yaml
 from pathlib import Path
 
@@ -46,13 +46,6 @@ class TemplateEditorWindow(Gtk.ApplicationWindow):
                 box-shadow: none;
                 outline: none;
 
-            }
-            
-            /* Ensure the dropdown button content can shrink and ellipsize */
-            dropdown > button > box > stack > label,
-            dropdown > button > box > label {
-                ellipsize: end;
-                max-width-chars: 20; /* Prevents the dropdown from pushing the delete button off-screen */
             }
         """, -1)
 
@@ -125,7 +118,7 @@ class TemplateEditorWindow(Gtk.ApplicationWindow):
 
         # Load existing data
         if template:
-            self.template = template
+            self.template = copy.deepcopy(template)
         else:
             self.template = {
                 "name": "",

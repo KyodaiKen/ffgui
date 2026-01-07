@@ -119,11 +119,11 @@ class TemplateManagerWindow(Gtk.ApplicationWindow):
 
     def on_new_template(self, _):
         # We can prompt for type first or default to Video in Editor
-        win = TemplateEditorWindow(self, template=None)
+        win = TemplateEditorWindow(self, template=None, on_save_callback=lambda _: self.refresh_list())
         win.present()
 
     def on_edit_clicked(self, _, template):
-        win = TemplateEditorWindow(self, template=template)
+        win = TemplateEditorWindow(self, template=template, on_save_callback=lambda _: self.refresh_list())
         win.present()
 
     def on_rename_clicked(self, _, template):
