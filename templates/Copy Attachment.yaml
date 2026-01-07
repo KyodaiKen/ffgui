@@ -1,0 +1,4 @@
+type: attachment
+codec: copy
+parameters:
+    options: {}

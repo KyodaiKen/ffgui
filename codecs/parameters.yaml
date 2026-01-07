@@ -6,30 +6,31 @@
 # ==========================================
 
 cinepak:
-  q:
-    label: "Quality"
-    type: "integer"
-    min: 1
-    max: 1000
-  max_extra_cb_iterations:
-    label: "Max extra codebook recalculation passes"
-    type: "integer"
-    min: 1
-  skip_empty_cb:
-    label: "Avoid wasting bytes (Incompatible with MacOS decoder!)"
-    type: "boolean"
-  min_strips:
-    label: "Minimum number of strips"
-    type: "integer"
-    min: 1
-  max_strips:
-    label: "Maximum number of strips"
-    type: "integer"
-    min: 1
-  strip_number_adaptivity:
-    label: "How much number of strips is allowed to change between frames. Higher is better but slower."
-    type: "integer"
-    min: 1
+  parameters:
+    q:
+      label: "Quality"
+      type: "integer"
+      min: 1
+      max: 1000
+    max_extra_cb_iterations:
+      label: "Max extra codebook recalculation passes"
+      type: "integer"
+      min: 1
+    skip_empty_cb:
+      label: "Avoid wasting bytes (Incompatible with MacOS decoder!)"
+      type: "boolean"
+    min_strips:
+      label: "Minimum number of strips"
+      type: "integer"
+      min: 1
+    max_strips:
+      label: "Maximum number of strips"
+      type: "integer"
+      min: 1
+    strip_number_adaptivity:
+      label: "How much number of strips is allowed to change between frames. Higher is better but slower."
+      type: "integer"
+      min: 1
 
 libx264:
   parameters:

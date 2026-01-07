@@ -62,6 +62,10 @@ class CodecPickerWindow(Gtk.ApplicationWindow):
                     })
             except:
                 continue
+        filtered.append({
+            "id": "copy",
+            "long": "Copy (no transcoding)"
+        })
         return filtered
 
     def populate_list(self, filter_text=""):

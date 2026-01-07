@@ -1,0 +1,7 @@
+type: audio
+codec: aac
+parameters:
+    options:
+        aac_coder: twoloop
+        b: '256'
+        cutoff: 20000
