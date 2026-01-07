@@ -450,6 +450,19 @@ class TemplateEditorWindow(Gtk.ApplicationWindow):
 
         # 2. Get the structured data (the method we built earlier)
         yaml_data = self.get_template_yaml_data()
+
+        # --- CUSTOM SERIALIZATION LOGIC ---
+        
+        class LiteralDumper(yaml.SafeDumper):
+            """Custom dumper to force quotes on strings and handle formatting"""
+            pass
+
+        def string_representer(dumper, data):
+            # Force single quotes for all strings to ensure 'constrained' 
+            # is handled as a literal string
+            return dumper.represent_scalar('tag:yaml.org,2002:str', data, style="'")
+        
+        LiteralDumper.add_representer(str, string_representer)
         
         # 3. Determine the save path
         # If we are editing (template exists), use its path. 
@@ -465,7 +478,7 @@ class TemplateEditorWindow(Gtk.ApplicationWindow):
             # 4. Write to disk
             with open(save_path, 'w') as f:
                 # We save only the 'data' part to the YAML file to match your structure
-                yaml.dump(yaml_data, f, sort_keys=False, indent=4)
+                yaml.dump(yaml_data, f, Dumper=LiteralDumper, sort_keys=False, indent=4)
             
             print(f"Successfully saved template to {save_path}")
             

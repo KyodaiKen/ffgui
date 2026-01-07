@@ -285,7 +285,7 @@ libmp3lame:
       min: 0
       max: 9
     compression_level:
-      label: "Algorithmic Quality"
+      label: "Algorithmic Quality (Lower = Better)"
       type: "integer"
       min: 0
       max: 9
@@ -295,6 +295,21 @@ libmp3lame:
     resample:
       label: "Output Sample Rate"
       type: "integer"
+    cutoff:
+      label: "Frequency Cutoff"
+      type: "integer"
+      type: "integer"
+      min: 4000
+      max: 20000
+    abr:
+      label: "Average Bitrate Mode"
+      type: "boolean"
+    original:
+      label: "Set original bit"
+      type: "boolean"
+    copyright:
+      label: "Set copyright bit"
+      type: "boolean"
 
 aac:
   parameters:
@@ -339,13 +354,13 @@ libopus:
       label: "VBR Mode"
       type: "enum"
       options:
-        on:
+        'on':
           sdesc: "VBR"
           ldesc: "Variable Bitrate (Default)"
-        off:
+        'off':
           sdesc: "CBR"
           ldesc: "Constant Bitrate"
-        constrained:
+        'constrained':
           sdesc: "Constrained"
           ldesc: "VBR restricted to a maximum bitrate"
     compression_level:
@@ -370,7 +385,17 @@ libopus:
         lowdelay:
           sdesc: "Low Delay"
           ldesc: "Minimum latency for interactive applications."
-
+    cutoff:
+      label: "Frequency Cutoff"
+      type: "integer"
+    packet_loss:
+      label: "Allow Packet Loss (%)"
+      type: "integer"
+      min: 0
+      max: 100
+    fec:
+      label: "Enable Eorward Error Correction"
+      type: "boolean"
 flac:
   parameters:
     compression_level:

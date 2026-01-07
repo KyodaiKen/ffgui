@@ -1,0 +1,11 @@
+'type': 'audio'
+'codec': 'libopus'
+'parameters':
+    'options':
+        'frame_duration': '60'
+        'cutoff': 20000
+        'packet_loss': 12
+        'fec': true
+        'compression_level': 10
+        'vbr': 'off'
+    'bit_rate': '64000'

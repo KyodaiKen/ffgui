@@ -1,7 +1,6 @@
 import gi
 gi.require_version("Gdk", "4.0")
 from gi.repository import Gtk, Gio, Gdk
-from Core.Job import Job
 from UI.JobRow import JobRow
 from UI.JobSetupWindow import JobSetupWindow
 from UI.TemplateManagerWindow import TemplateManagerWindow
