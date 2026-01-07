@@ -7,5 +7,5 @@ parameters:
         packet_loss: 12
         fec: true
         compression_level: 10
-        vbr: 'off'
-    bit_rate: '64000'
+        vbr: 'on'
+    bit_rate: 64000

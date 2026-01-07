@@ -17,6 +17,11 @@ class TemplateEditorWindow(Gtk.ApplicationWindow):
         self.locked_type = locked_type
         self.selected_codec = ""
 
+        self.schemas = {
+            "pyav": self._load_yaml("./codecs/pyav_stream_parameters.yaml"),
+            "encoders": self._load_yaml("./codecs/pyav_codec_parameters.yaml")
+        }
+
         # Set window size
         self.set_size_request(640, 480)
         self.set_default_size(1024, 700)
@@ -47,6 +52,17 @@ class TemplateEditorWindow(Gtk.ApplicationWindow):
                 box-shadow: none;
                 outline: none;
 
+            }
+
+            /* Style the flag selection button to look clickable but different from entries */
+            menubutton.text-button {
+                padding-left: 8px;
+                padding-right: 8px;
+            }
+            
+            /* Ensure the popover doesn't get too wide */
+            popover box {
+                min-width: 150px;
             }
         """, -1)
 
@@ -141,6 +157,14 @@ class TemplateEditorWindow(Gtk.ApplicationWindow):
         
         self.update_codec_ui()
 
+    def _load_yaml(self, path):
+        try:
+            with open(path, "r") as f:
+                return yaml.safe_load(f)
+        except Exception as e:
+            print(f"Error loading {path}: {e}")
+            return {}
+
     def create_list_column(self, title, icon, add_callback):
         box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=6, hexpand=True)
         lbl = Gtk.Label(label=f"<b>{title}</b>", use_markup=True, xalign=0)
@@ -180,13 +204,11 @@ class TemplateEditorWindow(Gtk.ApplicationWindow):
         # --- PART 2: THE VALUE (RHS) ---
         value_widget = None
         
-        # If we are loading an existing template, try to find the schema in our YAML
-        if not schema and is_custom and key:
-            try:
-                with open("./codecs/parameters.yaml", "r") as f:
-                    full_params = yaml.safe_load(f)
-                schema = full_params.get(self.selected_codec, {}).get("parameters", {}).get(key)
-            except: pass
+        if not schema and key:
+            if is_custom:
+                schema = self.schemas["encoders"].get(self.selected_codec, {}).get("parameters", {}).get(key)
+            else:
+                schema = self.schemas["pyav"].get("stream", {}).get("parameters", {}).get(key)
 
         if schema:
             p_type = schema.get("type", "string")
@@ -252,6 +274,45 @@ class TemplateEditorWindow(Gtk.ApplicationWindow):
                 value_widget = Gtk.SpinButton(adjustment=adj, numeric=True)
                 if not is_int:
                     value_widget.set_digits(2)
+
+            elif p_type == "flags" and options:
+                # 1. Create the toggle button that acts as the 'Value' widget
+                value_widget = Gtk.MenuButton(label="None Selected", hexpand=True)
+                popover = Gtk.Popover()
+                vbox = Gtk.Box(
+                        orientation=Gtk.Orientation.VERTICAL,
+                        spacing=6,
+                        margin_bottom=6,
+                        margin_end=6,
+                        margin_start=6,
+                        margin_top=6
+                    )
+                
+                selected_flags = str(value).split("+") if value else []
+                check_buttons = {}
+
+                def update_button_label():
+                    active = [sdesc for name, (cb, sdesc) in check_buttons.items() if cb.get_active()]
+                    value_widget.set_label("+".join(active) if active else "None")
+
+                # 2. Build the list of checkboxes
+                for flag_key, flag_info in options.items():
+                    cb = Gtk.CheckButton(label=flag_info['sdesc'])
+                    cb.set_active(flag_key in selected_flags)
+                    cb.connect("toggled", lambda *_: update_button_label())
+                    
+                    # Tooltip for the long description
+                    cb.set_tooltip_text(flag_info['ldesc'])
+                    
+                    vbox.append(cb)
+                    check_buttons[flag_key] = (cb, flag_info['sdesc'])
+
+                popover.set_child(vbox)
+                value_widget.set_popover(popover)
+                
+                # Store the buttons on the widget so extract_value can find them
+                value_widget._check_buttons = check_buttons
+                update_button_label()
             
             elif p_type == "boolean":
                 value_widget = Gtk.Switch()
@@ -276,16 +337,18 @@ class TemplateEditorWindow(Gtk.ApplicationWindow):
         listbox.append(row)
 
     def on_encoder_picker_clicked(self, button, listbox):
-        """New handler for Encoder Options that utilizes the YAML schema"""
+        """Pass the pre-loaded Encoder schema to the picker"""
         from UI.EncoderParameterPickerWindow import EncoderParameterPickerWindow
         
         def on_selected(key, schema):
-            # Refresh the row with the proper widget type
             parent_row = button.get_ancestor(Gtk.ListBoxRow)
-            listbox.remove(parent_row)
+            if parent_row:
+                listbox.remove(parent_row)
             self.add_row_to_list(listbox, key=key, is_custom=True, schema=schema)
 
-        picker = EncoderParameterPickerWindow(self, self.selected_codec, on_selected)
+        # Pass only the parameters for the currently selected codec
+        codec_schema = self.schemas["encoders"].get(self.selected_codec, {}).get("parameters", {})
+        picker = EncoderParameterPickerWindow(self, self.selected_codec, codec_schema, on_selected)
         picker.present()
 
     def remove_row(self, listbox, row, is_custom):
@@ -304,14 +367,16 @@ class TemplateEditorWindow(Gtk.ApplicationWindow):
         self.add_row_to_list(self.lst_private, is_custom=True)
 
     def on_probe_picker_clicked(self, button, listbox):
-        # We define a callback for when the picker selects a parameter
-        def on_param_selected(p):
-            # Change the button label to the parameter name
-            button.set_label(p['name'])
-            # (Optional) If you want to auto-set a default value, do it here
+        """Pass the pre-loaded PyAV schema to the picker"""
+        def on_param_selected(key, schema):
+            parent_row = button.get_ancestor(Gtk.ListBoxRow)
+            if parent_row:
+                listbox.remove(parent_row)
+            self.add_row_to_list(listbox, key=key, is_custom=False, schema=schema)
             
-        # This opens your existing ParameterPickerWindow (for PyAV probe options)
-        picker = ParameterPickerWindow(self, self.selected_codec, on_param_selected)
+        # Pass the pre-loaded dictionary directly
+        stream_schema = self.schemas["pyav"].get("stream", {}).get("parameters", {})
+        picker = ParameterPickerWindow(self, stream_schema, on_param_selected)
         picker.present()
 
     def load_structured_template(self, template):
@@ -372,6 +437,14 @@ class TemplateEditorWindow(Gtk.ApplicationWindow):
                 return widget.get_active()
             elif isinstance(widget, Gtk.Entry):
                 return widget.get_text()
+            elif isinstance(widget, Gtk.MenuButton) and hasattr(widget, "_check_buttons"):
+                # Collect keys of all active check buttons
+                active_keys = [
+                    key for key, (cb, sdesc) in widget._check_buttons.items() 
+                    if cb.get_active()
+                ]
+                # We return them joined by '+' which is standard for FFmpeg flags
+                return "+".join(active_keys)
             return ""
 
         # Collect Globals

@@ -5,54 +5,28 @@ import av.codec
 from UI.Core import UICore
 
 class ParameterPickerWindow(Gtk.ApplicationWindow):
-    def __init__(self, parent_window, codec_name, on_select, **kwargs):
+    def __init__(self, parent_window, schema_data, on_select, **kwargs):
         super().__init__(**kwargs, title="Select Parameter")
         self.on_select = on_select
         self.set_default_size(400, 450)
         self.set_transient_for(parent_window)
         self.set_modal(True)
 
-        # Introspect the codec
         self.params = []
-        try:
-            codec = av.codec.Codec(codec_name, mode='w')
-            ctx = av.codec.context.CodecContext.create(codec)
-            seen_names = set()
 
-            # 1. First, grab the Private Options (The specific encoder flags)
-            # This handles things like 'crf', 'preset', 'tune'
-            for opt in ctx.options:
+        # Use the passed-in schema_data
+        # We iterate over the dictionary passed from the Editor
+        if isinstance(schema_data, dict):
+            for key, info in schema_data.items():
                 self.params.append({
-                    "name": opt.name,
-                    "help": opt.help or "Encoder-specific option",
-                    "type": str(opt.type),
-                    "choices": list(opt.choices.keys()) if opt.choices else []
+                    "name": key,
+                    "label": info.get("label", key),
+                    "help": info.get("help", "Stream property"),
+                    "type": info.get("type", "string"),
+                    "schema": info
                 })
-                seen_names.add(opt.name)
-
-            # 2. Second, loop through the ctx object attributes (The Global options)
-            # These are things like 'bit_rate', 'time_base', 'gop_size'
-            # We filter for common properties that are typically integers or strings
-            for attr in dir(ctx):
-                if attr.startswith('_') or attr in seen_names:
-                    continue
-                
-                # We filter out methods/functions; we only want properties
-                val = getattr(ctx, attr)
-                name = type(val).__name__.upper()
-                if not callable(val) and not name.startswith("is_") :
-                    # We can't get help text for direct Python attributes easily,
-                    # so we use a generic descriptor or a lookup table
-                    self.params.append({
-                        "name": attr,
-                        "help": "Global stream property",
-                        "type": name,
-                        "choices": []
-                    })
-                    seen_names.add(attr)
-
-        except Exception as e:
-            print(f"Introspection failed: {e}")
+        else:
+            print(f"DEBUG: schema_data is not a dict, it is {type(schema_data)}")
 
         # UI Setup (Search and ListBox)
         hb = Gtk.HeaderBar()
@@ -104,5 +78,6 @@ class ParameterPickerWindow(Gtk.ApplicationWindow):
         self.populate_list(entry.get_text())
 
     def on_row_activated(self, lb, row):
-        self.on_select(row._data)
+        # Pass BOTH arguments to the callback
+        self.on_select(row._data['name'], row._data['schema'])
         self.destroy()

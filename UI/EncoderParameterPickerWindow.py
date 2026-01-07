@@ -4,23 +4,16 @@ gi.require_version("Gtk", "4.0")
 from gi.repository import Gtk, Pango
 
 class EncoderParameterPickerWindow(Gtk.Window):
-    def __init__(self, parent_window, codec, on_select):
+    def __init__(self, parent_window, codec, codec_schema, on_select):
         super().__init__(title=f"Encoder Options: {codec}", transient_for=parent_window, modal=True)
         self.set_default_size(450, 550)
         self.on_select = on_select
         self.codec = codec
 
-        # 1. Load the structured YAML data
-        self.codec_params = {}
-        try:
-            # Adjust path if your parameters.yaml is located elsewhere
-            with open("./codecs/parameters.yaml", "r") as f:
-                full_data = yaml.safe_load(f)
-                self.codec_params = full_data.get(codec, {}).get("parameters", {})
-        except Exception as e:
-            print(f"Error loading parameters.yaml: {e}")
+        # Use the passed-in schema directly
+        self.codec_params = codec_schema
 
-        # 2. UI Setup: HeaderBar with SearchEntry
+        # UI Setup: HeaderBar with SearchEntry
         hb = Gtk.HeaderBar()
         self.set_titlebar(hb)
         
