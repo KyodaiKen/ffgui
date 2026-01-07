@@ -6,9 +6,10 @@ from UI.DispositionPickerWindow import DispositionPickerWindow
 from UI.LanguagePickerWindow import LanguagePickerWindow
 
 class SourceStreamRow(Gtk.ListBoxRow):
-    def __init__(self, stream_descr, source_path, stream_index, parent_window, initial_metadata):
+    def __init__(self, stream_descr, stream_type, source_path, stream_index, parent_window, initial_metadata):
         super().__init__()
         self.source_path = source_path
+        self.stream_type = stream_type
         self.stream_index = stream_index
         self.parent_window = parent_window
         self.stream_metadata = initial_metadata if initial_metadata is not None else {}
@@ -121,6 +122,7 @@ class SourceStreamRow(Gtk.ListBoxRow):
         self.pw = TemplatePickerWindow(
             parent_window=self.parent_window,
             current_val=self.ent_tpl.get_text(),
+            stream_type=self.stream_type,
             on_select=self.apply_template
         )
         self.pw.present()

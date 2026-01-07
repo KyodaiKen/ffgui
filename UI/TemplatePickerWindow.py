@@ -1,12 +1,16 @@
 import gi
-import os
 import pathlib
 gi.require_version("Gtk", "4.0")
 from gi.repository import Gtk, Gdk, Gio, Pango
+import yaml
+from UI.TemplateEditorWindow import TemplateEditorWindow
+from UI.Core import UICore
 
 class TemplatePickerWindow(Gtk.ApplicationWindow):
-    def __init__(self, parent_window, current_val, on_select, **kwargs):
+    def __init__(self, parent_window, current_val, stream_type, on_select, **kwargs):
         super().__init__(**kwargs, title="Select Transcoding Template")
+        self.current_val = current_val
+        self.target_type = stream_type
         self.on_select = on_select
         self.set_default_size(450, 550)
         self.set_transient_for(parent_window)
@@ -58,25 +62,29 @@ class TemplatePickerWindow(Gtk.ApplicationWindow):
         self.search_entry.grab_focus()
 
     def discover_templates(self):
-        """Scans directories for .yaml template files"""
         paths_to_scan = [
             pathlib.Path("./templates"),
             pathlib.Path.home() / ".config" / "ffgui" / "templates"
         ]
         
-        # Windows specific path if needed (pathlib.home handles most, but for AppData:)
-        if os.name == 'nt':
-            paths_to_scan.append(pathlib.Path(os.getenv('APPDATA')) / "ffgui" / "templates")
-
         found_templates = []
         for p in paths_to_scan:
             if p.exists() and p.is_dir():
                 for file in p.glob("*.yaml"):
-                    found_templates.append({
-                        "name": file.stem, # Filename without .yaml
-                        "path": str(file),
-                        "origin": "User" if ".config" in str(p) or "AppData" in str(p) else "Local"
-                    })
+                    try:
+                        with open(file, 'r') as f:
+                            data = yaml.safe_load(f)
+                            # Only include if the template type matches the stream type
+                            if data and data.get('type') == self.target_type:
+                                found_templates.append({
+                                    "name": file.stem,
+                                    "path": str(file.resolve()),
+                                    "origin": "User" if ".config" in str(p) else "System",
+                                    "data": data
+                                })
+                    except Exception as e:
+                        print(f"Error reading {file}: {e}")
+                        
         return sorted(found_templates, key=lambda x: x['name'].lower())
 
     def populate_list(self, filter_text=""):
@@ -86,14 +94,10 @@ class TemplatePickerWindow(Gtk.ApplicationWindow):
         filter_text = filter_text.lower()
         for t in self.templates:
             if filter_text in t["name"].lower():
-                row_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=12)
-                row_box.props.margin_start = 6
-                row_box.props.margin_end = 6
-                row_box.props.margin_top = 6
-                row_box.props.margin_bottom = 6
+                row_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
 
                 # Icon based on origin
-                icon_name = "system-run-symbolic" if t["origin"] == "Local" else "avatar-default-symbolic"
+                icon_name = "emblem-system" if t["origin"] == "System" else "avatar-default-symbolic"
                 img = Gtk.Image.new_from_icon_name(icon_name)
                 row_box.append(img)
 
@@ -102,11 +106,11 @@ class TemplatePickerWindow(Gtk.ApplicationWindow):
                 row_box.append(lbl_name)
 
                 lbl_origin = Gtk.Label(label=t["origin"], xalign=1)
-                lbl_origin.add_css_class("caption")
+                lbl_origin.add_css_class("dim-label")
                 row_box.append(lbl_origin)
 
                 btn_edit = Gtk.Button(icon_name="document-edit-symbolic")
-                btn_edit.set_tooltip_text("Edit Template Configuration")
+                btn_edit.set_tooltip_text("Edit Template")
                 btn_edit.set_margin_end(24)
                 btn_edit.connect("clicked", self.on_edit_template_clicked, t)
                 row_box.append(btn_edit)
@@ -127,7 +131,40 @@ class TemplatePickerWindow(Gtk.ApplicationWindow):
         self.populate_list(entry.get_text())
 
     def on_new_template_clicked(self, btn):
-        print("Opening TemplateSetupWindow...") # Placeholder for next step
+        # 1. Create a blank template structure
+        new_template = {
+            "name": "",
+            "path": "",
+            "origin": "User", # New templates are usually user-created
+            "data": {
+                "type": "video",
+                "codec": "libx264",
+                "parameters": {"options": {}}
+            }
+        }
+        
+        # 2. Open the Editor Window
+        # We pass self.on_template_saved_and_pick as a custom callback
+        editor = TemplateEditorWindow(
+            parent_window=self, 
+            template=new_template,
+            on_save_callback=self.on_template_saved_and_pick
+        )
+        editor.present()
+
+    def on_template_saved_and_pick(self, template_name):
+        self.templates = self.discover_templates()
+        self.populate_list()
+        
+        # Automatically select the new template
+        # We search through our ListBox for the row matching the new name
+        row = self.lst_templates.get_first_child()
+        while row:
+            if hasattr(row, "_template_name") and row._template_name == template_name:
+                self.lst_templates.select_row(row)
+                self.on_ok_clicked()
+                break
+            row = row.get_next_sibling()
 
     def on_ok_clicked(self):
         row = self.lst_templates.get_selected_row()
@@ -187,13 +224,11 @@ class TemplatePickerWindow(Gtk.ApplicationWindow):
         except Exception as e:
             print(f"Launch failed: {e}")
 
-    def on_edit_template_clicked(self, button, template_data):
+    def on_edit_template_clicked(self, button, template):
         """Opens the TemplateSetupWindow for the selected template"""
-        # path = template_data['path']
-        print(f"Opening TemplateSetupWindow for: {template_data['name']}")
-        # When ready:
-        # win = TemplateSetupWindow(parent=self, template_path=path)
-        # win.present()
+        print(f"Opening TemplateSetupWindow for: {template['name']}")
+        win = TemplateEditorWindow(parent_window=self, template=template)
+        win.present()
 
     def show_error_dialog(self, message):
         """Simple feedback for missing files"""

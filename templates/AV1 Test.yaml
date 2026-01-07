@@ -1,0 +1,8 @@
+type: video
+codec: libsvtav1
+parameters:
+    options:
+        preset: '5'
+        b: 1M
+    display_aspect_ratio: '4:3'
+    profile: Main

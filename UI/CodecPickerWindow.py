@@ -1,9 +1,9 @@
 import gi
 gi.require_version("Gtk", "4.0")
-from gi.repository import Gtk, Gdk, Pango
+from gi.repository import Gtk, Pango
 import av.codec
 
-class BaseCodecPickerWindow(Gtk.ApplicationWindow):
+class CodecPickerWindow(Gtk.ApplicationWindow):
     def __init__(self, parent_window, codec_type, on_select, **kwargs):
         super().__init__(**kwargs, title=f"Select {codec_type.capitalize()} Codec")
         self.on_select = on_select
@@ -53,7 +53,7 @@ class BaseCodecPickerWindow(Gtk.ApplicationWindow):
         # codecs_available is a set of names
         for name in sorted(av.codec.codecs_available):
             try:
-                c = av.codec.Codec(name)
+                c = av.codec.Codec(name, mode='w')
                 # We only want encoders (for templates) and matching the type
                 if c.is_encoder and c.type == self.codec_type:
                     filtered.append({
@@ -72,16 +72,12 @@ class BaseCodecPickerWindow(Gtk.ApplicationWindow):
         for c in self.codecs:
             if filter_text in c["id"].lower() or filter_text in c["long"].lower():
                 row_vbox = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=2)
-                row_vbox.props.margin_start = 6
-                row_vbox.props.margin_end = 6
-                row_vbox.props.margin_top = 6
-                row_vbox.props.margin_bottom = 6
 
                 top_hbox = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=12)
                 
                 lbl_name = Gtk.Label(xalign=0)
                 lbl_name.set_markup(f"<b>{c["id"]}</b>")
-                lbl_name.set_width_chars(12)
+                lbl_name.set_width_chars(20)
                 
                 lbl_long = Gtk.Label(label=c["long"], xalign=0)
                 lbl_long.set_ellipsize(Pango.EllipsizeMode.END)
@@ -103,22 +99,3 @@ class BaseCodecPickerWindow(Gtk.ApplicationWindow):
         if row:
             self.on_select(row._data)
             self.destroy()
-
-# --- Specialized Subclasses ---
-
-class VideoCodecPickerWindow(BaseCodecPickerWindow):
-    def __init__(self, parent_window, on_select, **kwargs):
-        super().__init__(parent_window, "video", on_select, **kwargs)
-
-class AudioCodecPickerWindow(BaseCodecPickerWindow):
-    def __init__(self, parent_window, on_select, **kwargs):
-        super().__init__(parent_window, "audio", on_select, **kwargs)
-
-class SubCodecPickerWindow(BaseCodecPickerWindow):
-    def __init__(self, parent_window, on_select, **kwargs):
-        super().__init__(parent_window, "subtitle", on_select, **kwargs)
-
-class MiscCodecPickerWindow(BaseCodecPickerWindow):
-    def __init__(self, parent_window, on_select, **kwargs):
-        # Using 'data' for attachments and other stream types
-        super().__init__(parent_window, "data", on_select, **kwargs)

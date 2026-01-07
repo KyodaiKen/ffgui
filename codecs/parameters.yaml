@@ -1,0 +1,430 @@
+# FFmpeg Parameter Schema 2026
+# Structured for UI Generation and Validation
+
+# ==========================================
+# VIDEO ENCODERS (SOFTWARE)
+# ==========================================
+
+cinepak:
+  q:
+    label: "Quality"
+    type: "integer"
+    min: 1
+    max: 1000
+  max_extra_cb_iterations:
+    label: "Max extra codebook recalculation passes"
+    type: "integer"
+    min: 1
+  skip_empty_cb:
+    label: "Avoid wasting bytes (Incompatible with MacOS decoder!)"
+    type: "boolean"
+  min_strips:
+    label: "Minimum number of strips"
+    type: "integer"
+    min: 1
+  max_strips:
+    label: "Maximum number of strips"
+    type: "integer"
+    min: 1
+  strip_number_adaptivity:
+    label: "How much number of strips is allowed to change between frames. Higher is better but slower."
+    type: "integer"
+    min: 1
+
+libx264:
+  parameters:
+    preset:
+      label: "Encoding Speed"
+      type: "enum"
+      options: ["ultrafast", "superfast", "veryfast", "faster", "fast", "medium", "slow", "slower", "veryslow", "placebo"]
+      default: "medium"
+    crf:
+      label: "Constant Quality (CRF)"
+      type: "integer"
+      min: 0
+      max: 51
+      default: 23
+    tune:
+      label: "Content Optimization"
+      type: "enum"
+      options: ["film", "animation", "grain", "stillimage", "psnr", "ssim", "zerolatency", "fastdecode"]
+    profile:
+      label: "H.264 Profile"
+      type: "enum"
+      options: ["baseline", "main", "high", "high10", "high422", "high444"]
+    level:
+      label: "Compatibility Level"
+      type: "string"
+    x264-params:
+      label: "Advanced x264 Strings"
+      type: "string"
+    sc_threshold:
+      label: "Scene Change Sensitivity"
+      type: "integer"
+      min: 0
+      max: 100
+    g:
+      label: "GOP Size (Keyframes)"
+      type: "integer"
+      min: 0
+      max: 1000
+
+libx265:
+  parameters:
+    preset:
+      label: "Compression Effort"
+      type: "enum"
+      options: ["ultrafast", "superfast", "veryfast", "faster", "fast", "medium", "slow", "slower", "veryslow", "placebo"]
+    crf:
+      label: "Constant Quality (CRF)"
+      type: "integer"
+      min: 0
+      max: 51
+      default: 28
+    tune:
+      label: "Tuning Mode"
+      type: "enum"
+      options: ["psnr", "ssim", "grain", "zerolatency", "fastdecode"]
+    profile:
+      label: "HEVC Profile"
+      type: "enum"
+      options: ["main", "main10", "mainstillpicture"]
+    hdr10:
+      label: "Enable HDR10 Metadata"
+      type: "boolean"
+
+libvpx-vp9:
+  parameters:
+    crf:
+      label: "Constant Quality (CRF)"
+      type: "integer"
+      min: 0
+      max: 63
+    deadline:
+      label: "Encoding Deadline"
+      type: "enum"
+      options:
+        best:
+          sdesc: "Best"
+          ldesc: "Highest quality, slowest encoding speed."
+        good:
+          sdesc: "Good"
+          ldesc: "Balanced speed and quality (default)."
+        realtime:
+          sdesc: "Realtime"
+          ldesc: "Prioritizes speed for live streaming."
+    cpu-used:
+      label: "Speed/Quality Balance"
+      type: "integer"
+      min: -8
+      max: 8
+    row-mt:
+      label: "Row Multithreading"
+      type: "boolean"
+    tile-columns:
+      label: "Tiling Columns"
+      type: "integer"
+      min: 0
+      max: 6
+    lossless:
+      label: "Lossless Encoding"
+      type: "boolean"
+
+libsvtav1:
+  parameters:
+    preset:
+      label: "Speed Preset"
+      type: "integer"
+      min: 0
+      max: 13
+      default: 10
+    crf:
+      label: "Constant Quality (CRF)"
+      type: "integer"
+      min: 0
+      max: 63
+      default: 35
+    rc:
+      label: "Rate Control Mode"
+      type: "enum"
+      options:
+        0:
+          sdesc: "CQP"
+          ldesc: "Constant Quantization Parameter (Fixed quality per frame)"
+        1:
+          sdesc: "VBR"
+          ldesc: "Variable Bitrate (Aims for a target average bitrate)"
+        2:
+          sdesc: "CVBR"
+          ldesc: "Constrained Variable Bitrate (VBR with a maximum peak limit)"
+    tune:
+      label: "Tuning"
+      type: "enum"
+      options:
+        0:
+          sdesc: "OQ"
+          ldesc: "Objective Quality (Optimized for benchmarks like PSNR/SSIM)"
+        1:
+          sdesc: "VQ"
+          ldesc: "Visual Quality (Optimized for human eye perception/subjective detail)"
+    svtav1-parms:
+      label: "Advanced parameters"
+      type: "string"
+
+libaom-av1:
+  parameters:
+    crf:
+      label: "Constant Quality (CRF)"
+      type: "integer"
+      min: 0
+      max: 63
+    cpu-used:
+      label: "Speed (CPU Usage)"
+      type: "integer"
+      min: 0
+      max: 8
+    usage:
+      label: "Usage Profile"
+      type: "enum"
+      options: ["good", "realtime", "allintra"]
+    tiles:
+      label: "Tiling Grid"
+      type: "string"
+
+# ==========================================
+# VIDEO ENCODERS (HARDWARE ACCELERATED)
+# ==========================================
+
+h264_nvenc:
+  parameters:
+    preset:
+      label: "Nvidia Preset"
+      type: "enum"
+      options: ["p1", "p2", "p3", "p4", "p5", "p6", "p7"]
+    tune:
+      label: "Nvidia Tuning"
+      type: "enum"
+      options: ["hq", "ll", "ull", "lossy", "lossless"]
+    rc:
+      label: "Rate Control"
+      type: "enum"
+      options:
+        constqp:
+          sdesc: "CQ"
+          ldesc: "Constant QP Mode"
+        vbr:
+          sdesc: "VBR"
+          ldesc: "Variable Bit Rate"
+        cbr:
+          sdesc: "CBR"
+          ldesc: "Constant Bit Rate"
+    cq:
+      label: "Target Quality"
+      type: "integer"
+      min: 0
+      max: 51
+    multipass:
+      label: "Multipass Mode"
+      type: "enum"
+      options:
+        disabled:
+          sdesc: "Single Pass"
+          ldesc: "Faster, standard encoding."
+        qres:
+          sdesc: "Quarter Res"
+          ldesc: "Two-pass encoding with quarter resolution first pass."
+        fullres:
+          sdesc: "Full Res"
+          ldesc: "Highest quality two-pass encoding."
+
+hevc_nvenc:
+  parameters:
+    preset:
+      label: "Nvidia Preset"
+      type: "enum"
+      options: ["p1", "p2", "p3", "p4", "p5", "p6", "p7"]
+    rc:
+      label: "Rate Control"
+      type: "enum"
+      options: ["constqp", "vbr", "cbr"]
+    cq:
+      label: "Target Quality"
+      type: "integer"
+      min: 0
+      max: 51
+    tier:
+      label: "HEVC Tier"
+      type: "enum"
+      options: ["main", "high"]
+
+h264_amf:
+  parameters:
+    usage:
+      label: "Usage Scenario"
+      type: "enum"
+      options: ["transcoding", "ultralowlatency", "lowlatency"]
+    rc:
+      label: "Rate Control Method"
+      type: "enum"
+      options: ["cqp", "vbr", "cbr"]
+    quality:
+      label: "Quality Preference"
+      type: "enum"
+      options: ["balanced", "speed", "quality"]
+
+# ==========================================
+# AUDIO ENCODERS
+# ==========================================
+
+libmp3lame:
+  parameters:
+    q:
+      label: "VBR Quality Level"
+      type: "integer"
+      min: 0
+      max: 9
+    compression_level:
+      label: "Algorithmic Quality"
+      type: "integer"
+      min: 0
+      max: 9
+    joint_stereo:
+      label: "Use Joint Stereo"
+      type: "boolean"
+    resample:
+      label: "Output Sample Rate"
+      type: "integer"
+
+aac:
+  parameters:
+    b:
+      label: "Target Bitrate"
+      type: "string"
+    cutoff:
+      label: "Frequency Cutoff"
+      type: "integer"
+    aac_coder:
+      label: "AAC Coder Algorithm"
+      type: "enum"
+      options: ["twoloop", "fast", "anmr"]
+
+libfdk_aac:
+  parameters:
+    vbr:
+      label: "VBR Mode"
+      type: "integer"
+      min: 1
+      max: 5
+    profile:
+      label: "AAC Profile"
+      type: "enum"
+      options:
+        aac_lc:
+          sdesc: "LC"
+          ldesc: "Low Complexity (Widest compatibility)"
+        aac_he:
+          sdesc: "HE-AAC"
+          ldesc: "High Efficiency (Better for low bitrates)"
+        aac_he_v2:
+          sdesc: "HE-AAC v2"
+          ldesc: "Parametric Stereo for very low bitrates"
+    afterburner:
+      label: "Afterburner Signal processing"
+      type: "boolean"
+
+libopus:
+  parameters:
+    vbr:
+      label: "VBR Mode"
+      type: "enum"
+      options:
+        on:
+          sdesc: "VBR"
+          ldesc: "Variable Bitrate (Default)"
+        off:
+          sdesc: "CBR"
+          ldesc: "Constant Bitrate"
+        constrained:
+          sdesc: "Constrained"
+          ldesc: "VBR restricted to a maximum bitrate"
+    compression_level:
+      label: "Complexity"
+      type: "integer"
+      min: 0
+      max: 10
+    frame_duration:
+      label: "Frame Duration (ms)"
+      type: "enum"
+      options: ["2.5", "5", "10", "20", "40", "60"]
+    application:
+      label: "Intended Usage"
+      type: "enum"
+      options:
+        voip:
+          sdesc: "VOIP"
+          ldesc: "Optimized for voice clarity and low latency."
+        audio:
+          sdesc: "Audio"
+          ldesc: "Optimized for music and high-fidelity audio."
+        lowdelay:
+          sdesc: "Low Delay"
+          ldesc: "Minimum latency for interactive applications."
+
+flac:
+  parameters:
+    compression_level:
+      label: "Compression Strength"
+      type: "integer"
+      min: 0
+      max: 12
+    lpc_type:
+      label: "LPC Analysis Type"
+      type: "enum"
+      options: ["none", "fixed", "levinson", "cholesky"]
+
+# ==========================================
+# BROADCAST & INTERMEDIATE
+# ==========================================
+
+prores_ks:
+  parameters:
+    profile:
+      label: "ProRes Profile"
+      type: "enum"
+      options:
+        0:
+          sdesc: "Proxy"
+          ldesc: "ProRes 422 Proxy (Very low bitrate)"
+        1:
+          sdesc: "LT"
+          ldesc: "ProRes 422 LT"
+        2:
+          sdesc: "Standard"
+          ldesc: "ProRes 422"
+        3:
+          sdesc: "HQ"
+          ldesc: "ProRes 422 HQ"
+        4:
+          sdesc: "4444"
+          ldesc: "ProRes 4444 (Supports Alpha)"
+        5:
+          sdesc: "4444 XQ"
+          ldesc: "ProRes 4444 XQ (Highest quality)"
+    qscale:
+      label: "Quantizer (Quality)"
+      type: "integer"
+      min: 1
+      max: 31
+    vendor:
+      label: "Vendor ID"
+      type: "string"
+
+dnxhd:
+  parameters:
+    b:
+      label: "Target Bitrate"
+      type: "string"
+    profile:
+      label: "DNxHD Profile"
+      type: "enum"
+      options: ["dnxhd", "dnxhr_lb", "dnxhr_sq", "dnxhr_hq", "dnxhr_hqx", "dnxhr_444"]

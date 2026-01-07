@@ -1,6 +1,6 @@
 import gi
 gi.require_version("Gdk", "4.0")
-from gi.repository import Gtk, Gio, Gdk, Pango
+from gi.repository import GLib, Gtk, Gio, Gdk, Pango
 from UI.SourceStreamRow import SourceStreamRow
 from UI.ContainerPickerWindow import ContainerPickerWindow
 from UI.MetadataManagerWindow import MetadataManagerWindow
@@ -331,6 +331,7 @@ class JobSetupWindow(Gtk.ApplicationWindow):
                     header_row = Gtk.ListBoxRow(selectable=False)
                     header_row.set_child(header_hbox)
                     self.lst_source_streams.append(header_row)
+                    last_header = header_row
 
                     # Add individual streams for this file
                     for stm_idx, stream in enumerate(media.streams):
@@ -339,7 +340,7 @@ class JobSetupWindow(Gtk.ApplicationWindow):
                         existing_meta = dict(stream.metadata) if stream.metadata else {}
                         
                         # Create the row with the metadata
-                        row = SourceStreamRow(desc, source_path, stm_idx, self, initial_metadata=existing_meta)
+                        row = SourceStreamRow(desc, stream.type, source_path, stm_idx, self, initial_metadata=existing_meta)
                         
                         # Restore from cache if user had already typed something here
                         key = (source_path, stm_idx)
@@ -360,6 +361,10 @@ class JobSetupWindow(Gtk.ApplicationWindow):
                             
                         self.lst_source_streams.append(row)
 
+                    if last_header:
+                        # We must wait for the layout to be calculated
+                        GLib.idle_add(self.do_scroll_to_row, last_header)
+
             except Exception as e:
                 # Handle corrupted files or unsupported formats gracefully in the UI
                 error_row = Gtk.ListBoxRow(selectable=False)
@@ -367,6 +372,20 @@ class JobSetupWindow(Gtk.ApplicationWindow):
                 error_label.add_css_class("error") # Assuming you have an error style
                 error_row.set_child(error_label)
                 self.lst_source_streams.append(error_row)
+
+    def do_scroll_to_row(self, row):
+        """Manually scrolls the ScrolledWindow to the position of a specific row"""
+        # Get the vertical adjustment of the scrolled window
+        adj = self.scroll_streams.get_vadjustment()
+        
+        # Find the row's position relative to the ListBox
+        # We translate (0,0) of the row into the coordinate space of the ListBox
+        _, y = row.translate_coordinates(self.lst_source_streams, 0, 0)
+        
+        if y > 0:
+            # Set the adjustment value to the row's 'y' coordinate
+            # This aligns the top of the row with the top of the scroll area
+            adj.set_value(y)
 
     def sync_data_model(self):
         """Rebuild the list based on the current UI order"""

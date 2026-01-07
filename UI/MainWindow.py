@@ -4,6 +4,7 @@ from gi.repository import Gtk, Gio, Gdk
 from Core.Job import Job
 from UI.JobRow import JobRow
 from UI.JobSetupWindow import JobSetupWindow
+from UI.TemplateManagerWindow import TemplateManagerWindow
 
 class MainWindow(Gtk.ApplicationWindow):
     MENU_XML = """
@@ -38,6 +39,10 @@ class MainWindow(Gtk.ApplicationWindow):
                 <item>
                     <attribute name='label'>Preferences</attribute>
                     <attribute name='action'>win.pref</attribute>
+                </item>
+                <item>
+                    <attribute name='label'>Template Manager</attribute>
+                    <attribute name='action'>win.tplm</attribute>
                 </item>
             </section>
             <section>
@@ -102,6 +107,7 @@ class MainWindow(Gtk.ApplicationWindow):
             ("create_job", self.on_create_job),
             ("create_jobs_from_dir", self.on_create_jobs_from_dir),
             ("pref", self.on_pref),
+            ("tplm", self.on_tplm),
             ("about", self.on_about),
             ("quit", self.on_quit)
         ]
@@ -205,6 +211,10 @@ class MainWindow(Gtk.ApplicationWindow):
 
     def on_pref(self, action, param):
         pass
+
+    def on_tplm(self, action, param):
+        win = TemplateManagerWindow(parent_window=self)
+        win.present()
 
     def on_about(self, action, param):
         about_dialog = Gtk.AboutDialog(transient_for=self, modal=True)

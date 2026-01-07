@@ -139,13 +139,6 @@ class LanguagePickerWindow(Gtk.ApplicationWindow):
             self.lst_languages.set_focus_child(self._target_row)
         return False
 
-    def scroll_to_selected(self):
-        if self._target_row:
-            self.lst_languages.select_row(self._target_row)
-            self._target_row.grab_focus()
-            self.lst_languages.set_focus_child(self._target_row)
-        return False
-
     def on_search_changed(self, entry):
         self.populate_list(entry.get_text())
         # We don't want to auto-scroll while the user is actively typing a search

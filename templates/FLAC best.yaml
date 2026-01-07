@@ -1,0 +1,6 @@
+type: audio
+codec: flac
+parameters:
+    options:
+        compression_level: 8
+        lpc_type: cholesky
