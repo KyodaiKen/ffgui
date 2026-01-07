@@ -12,7 +12,8 @@ class TemplatePickerWindow(Gtk.ApplicationWindow):
         self.current_val = current_val
         self.target_type = stream_type
         self.on_select = on_select
-        self.set_default_size(450, 550)
+        self.set_default_size(600, 500)
+        self.set_size_request(600, 300)
         self.set_transient_for(parent_window)
         self.set_modal(True)
 
@@ -79,13 +80,14 @@ class TemplatePickerWindow(Gtk.ApplicationWindow):
                                 found_templates.append({
                                     "name": file.stem,
                                     "path": str(file.resolve()),
+                                    "type": data.get("type", "unknown").upper(),
                                     "origin": "User" if ".config" in str(p) else "System",
                                     "data": data
                                 })
                     except Exception as e:
                         print(f"Error reading {file}: {e}")
                         
-        return sorted(found_templates, key=lambda x: x['name'].lower())
+        return sorted(found_templates, key=lambda x: (x['type'], x['name'].lower()))
 
     def populate_list(self, filter_text=""):
         while child := self.lst_templates.get_first_child():
@@ -96,10 +98,17 @@ class TemplatePickerWindow(Gtk.ApplicationWindow):
             if filter_text in t["name"].lower():
                 row_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
 
-                # Icon based on origin
-                icon_name = "emblem-system" if t["origin"] == "System" else "avatar-default-symbolic"
-                img = Gtk.Image.new_from_icon_name(icon_name)
-                row_box.append(img)
+                # Type Badge
+                lbl_type = Gtk.Label(label=t["type"])
+                lbl_type.add_css_class("caption")
+                lbl_type.set_width_chars(12)
+                row_box.append(lbl_type)
+
+                t_type = t.get("type", "unknown").lower()
+                icon_name = UICore.get_icon_for_type(t_type)
+                img_type = Gtk.Image.new_from_icon_name(icon_name)
+                img_type.set_tooltip_text(f"Type: {t_type.capitalize()}")
+                row_box.append(img_type)
 
                 lbl_name = Gtk.Label(label=f"<b>{t["name"]}</b>", xalign=0, hexpand=True, use_markup=True)
                 lbl_name.set_ellipsize(Pango.EllipsizeMode.MIDDLE)
@@ -148,7 +157,8 @@ class TemplatePickerWindow(Gtk.ApplicationWindow):
         editor = TemplateEditorWindow(
             parent_window=self, 
             template=new_template,
-            on_save_callback=self.on_template_saved_and_pick
+            on_save_callback=self.on_template_saved_and_pick,
+            locked_type=self.target_type
         )
         editor.present()
 
@@ -227,7 +237,12 @@ class TemplatePickerWindow(Gtk.ApplicationWindow):
     def on_edit_template_clicked(self, button, template):
         """Opens the TemplateSetupWindow for the selected template"""
         print(f"Opening TemplateSetupWindow for: {template['name']}")
-        win = TemplateEditorWindow(parent_window=self, template=template)
+        win = TemplateEditorWindow(
+            parent_window=self, 
+            template=template,
+            on_save_callback=self.on_template_saved_and_pick,
+            locked_type=self.target_type
+        )
         win.present()
 
     def show_error_dialog(self, message):

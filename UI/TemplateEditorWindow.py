@@ -11,9 +11,10 @@ from pathlib import Path
 all_types = UICore.get_all_types()
 
 class TemplateEditorWindow(Gtk.ApplicationWindow):
-    def __init__(self, parent_window, template, on_save_callback=None,**kwargs):
+    def __init__(self, parent_window, template, on_save_callback=None, locked_type=None,**kwargs):
         super().__init__(**kwargs, title="Template Editor")
         self.on_save_callback = on_save_callback
+        self.locked_type = locked_type
         self.selected_codec = ""
 
         # Set window size
@@ -323,11 +324,22 @@ class TemplateEditorWindow(Gtk.ApplicationWindow):
         params = data.get('parameters', {})
 
         # Set the DropDown index based on the type string
-        try:
-            type_idx = all_types.index(data.get('type', 'video').lower())
-            self.combo_type.set_selected(type_idx)
-        except ValueError:
-            pass
+        if self.locked_type:
+            try:
+                # Force the index to match the locked type
+                type_idx = all_types.index(self.locked_type.lower())
+                self.combo_type.set_selected(type_idx)
+                # Lock the UI
+                self.combo_type.set_sensitive(False) 
+                self.combo_type.set_tooltip_text(f"Type is locked to {self.locked_type} for this context.")
+            except ValueError:
+                pass
+        else:
+            try:
+                type_idx = all_types.index(data.get('type', 'video').lower())
+                self.combo_type.set_selected(type_idx)
+            except ValueError:
+                pass
         
         # Load Globals (parameters:)
         for k, v in params.items():
@@ -415,7 +427,7 @@ class TemplateEditorWindow(Gtk.ApplicationWindow):
 
     def on_change_codec_clicked(self, button):
         # Pass the CURRENT type from the template data to the picker
-        current_type = self.template['data']['type']
+        current_type = self.locked_type if self.locked_type else self.get_selected_type()
         wnd = CodecPickerWindow(
             parent_window=self, 
             codec_type=current_type, 
