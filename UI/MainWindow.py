@@ -1,6 +1,7 @@
 import gi
 gi.require_version("Gdk", "4.0")
 from gi.repository import Gtk, Gio, Gdk
+from UI.SettingsWindow import SettingsWindow
 from UI.JobRow import JobRow
 from UI.JobSetupWindow import JobSetupWindow
 from UI.TemplateManagerWindow import TemplateManagerWindow
@@ -209,7 +210,10 @@ class MainWindow(Gtk.ApplicationWindow):
         pass
 
     def on_pref(self, action, param):
-        pass
+        """Triggered by win.pref in the main menu."""
+        # We pass self (MainWindow) as parent and self.app as the application instance
+        settings_win = SettingsWindow(parent=self, app_instance=self.app)
+        settings_win.present()
 
     def on_tplm(self, action, param):
         win = TemplateManagerWindow(parent_window=self)

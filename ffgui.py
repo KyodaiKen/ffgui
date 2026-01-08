@@ -1,6 +1,6 @@
 import gi
 import re
-import os  # Added missing import
+import os
 import threading
 import platform
 from pathlib import Path
@@ -9,7 +9,6 @@ gi.require_version("Gdk", "4.0")
 gi.require_version("Gtk", "4.0")
 from gi.repository import GLib, Gtk
 
-# Assuming these exist in your project structure
 from UI.MainWindow import MainWindow
 from Core.FFmpegParsers import (
     FFmpegFilterParser,
@@ -25,19 +24,13 @@ class FFGuiApp(Gtk.Application):
 
         self.wndMain = None
         self.ffmpeg_data = {}
-        self.progress_win = None # Track window state
+        self.progress_win = None
+        self.introspection_cancelled = False
 
         self.resolve_paths()
         self.setup_ffmpeg_execs()
 
-        # Debug prints for verification
-        print(f"(i) Using Base Directory ... : {self.base_dir}")
-        print(f"(i) Using Settings File .... : {self.settings_file}")
-        print(f"(i) Using Templates Directory: {self.templates_dir}")
-        print(f"(i) Using Codecs Directory . : {self.codecs_dir}")
-        print(f"(i) Using Cache Directory .. : {self.cache_dir}")
-
-        # Initialize Parsers using the resolved path
+        # Initialize Parsers
         self.parsers = {
             "filters": FFmpegFilterParser(self.ffmpeg_full_exec_path, self.cache_dir / "filters.json"),
             "codecs": FFmpegCodecParser(self.ffmpeg_full_exec_path, self.cache_dir / "codecs.json"),
@@ -46,11 +39,9 @@ class FFGuiApp(Gtk.Application):
         }
 
     def resolve_paths(self):
-        """Determines where to store persistent settings vs transient cache."""
         system = platform.system()
         app_name = "ffgui"
 
-        # Default System-specific paths
         if system == "Windows":
             self.base_dir = Path(os.environ.get("APPDATA", "~/AppData/Roaming")).expanduser() / app_name
             low_app_data = Path(os.environ.get("USERPROFILE", "~")).expanduser() / "AppData" / "LocalLow"
@@ -59,23 +50,19 @@ class FFGuiApp(Gtk.Application):
             self.base_dir = Path("~/.config").expanduser() / app_name
             self.cache_dir = Path("~/.cache").expanduser() / app_name / "ffmpeg"
 
-        # Portability Check: Try Local storage first
+        # Portable Mode Check
         try:
-            # We check the current working directory
             local_test = Path("./.write_test")
             local_test.touch()
             local_test.unlink()
-
             self.base_dir = Path("./")
             self.cache_dir = Path("./.cache/ffmpeg")
         except (OSError, PermissionError):
             pass
 
-        # Final Creation
         self.base_dir.mkdir(parents=True, exist_ok=True)
         self.cache_dir.mkdir(parents=True, exist_ok=True)
-
-        self.settings_file = self.base_dir / "settings.json"
+        self.settings_file = self.base_dir / "settings.yaml"
         self.templates_dir = self.base_dir / "templates"
         self.templates_dir.mkdir(exist_ok=True)
         self.codecs_dir = self.base_dir / "codecs"
@@ -103,19 +90,16 @@ class FFGuiApp(Gtk.Application):
         self.show_init_progress()
 
     def show_init_progress(self):
-        """Creates a small window to show FFmpeg introspection progress."""
         self.progress_win = Gtk.Window(title="Initializing FFmpeg Data...", modal=True)
         self.progress_win.set_default_size(400, 120)
         self.progress_win.set_resizable(False)
 
+        # Intercept the 'X' button
+        self.progress_win.connect("close-request", self.on_window_close_request)
+
         header = Gtk.HeaderBar()
         header.set_show_title_buttons(True)
         self.progress_win.set_titlebar(header)
-
-        # Connect the window's close (X) button to our logic
-        self.progress_win.connect("close-request", self.on_window_close_request)
-
-        self.introspection_cancelled = False
 
         vbox = Gtk.Box(
             orientation=Gtk.Orientation.VERTICAL,
@@ -131,7 +115,7 @@ class FFGuiApp(Gtk.Application):
 
         btn_cancel = Gtk.Button(label="Cancel")
         btn_cancel.set_halign(Gtk.Align.END)
-        btn_cancel.connect("clicked", lambda btn: self.on_cancel_introspection())
+        btn_cancel.connect("clicked", lambda btn: self.on_cancel_request())
         vbox.append(btn_cancel)
 
         self.progress_win.set_child(vbox)
@@ -141,31 +125,24 @@ class FFGuiApp(Gtk.Application):
         thread.start()
 
     def on_window_close_request(self, window):
-        """Triggered when the user clicks the 'X' button."""
-        self.on_cancel_introspection()
-        return True # Stop GTK from actually destroying the window immediately
+        self.on_cancel_request()
+        return True # Prevent immediate destruction
 
-    def on_cancel_introspection(self):
-        """Shows a confirmation dialog before stopping and quitting."""
-        # Create a simple confirmation dialog
+    def on_cancel_request(self):
         dialog = Gtk.AlertDialog(
             message="Abort Initialization?",
             detail="The application cannot run without FFmpeg data. Do you want to quit?",
             buttons=["Continue", "Quit Application"]
         )
-
-        # Show the dialog and handle the response
         dialog.choose(self.progress_win, None, self.on_cancel_confirmed)
 
     def on_cancel_confirmed(self, dialog, result):
         response = dialog.choose_finish(result)
-        if response == 1: # "Quit Application" index
-            print("(i) Initialization aborted by user.")
+        if response == 1:
             self.introspection_cancelled = True
             self.quit()
 
     def run_introspection(self):
-        """Background thread worker with cancellation check."""
         try:
             total_parsers = len(self.parsers)
             display_names = {
@@ -174,17 +151,14 @@ class FFGuiApp(Gtk.Application):
             }
 
             for idx, (key, parser) in enumerate(self.parsers.items()):
-                # Check for cancellation at the start of every parser block
-                if self.introspection_cancelled:
-                    return
+                if self.introspection_cancelled: return
 
                 base_fraction = idx / total_parsers
                 parser_weight = 1.0 / total_parsers
                 prefix = display_names.get(key, "Processing")
 
                 def granular_callback(msg):
-                    if self.introspection_cancelled or not self.progress_win:
-                        return
+                    if self.introspection_cancelled or not self.progress_win: return
 
                     clean_msg = re.sub(r'\x1b\[[0-9;]*[mK]', '', msg).replace('\r', '').strip()
                     item_match = re.search(r'\]\s+(.*)$', clean_msg)
@@ -210,7 +184,11 @@ class FFGuiApp(Gtk.Application):
         if self.progress_win:
             self.progress_win.destroy()
             self.progress_win = None
-        self.activate()
+        if not self.introspection_cancelled:
+            if self.wndMain:
+                self.wndMain.present()
+            else:
+                self.activate()
 
     def do_activate(self):
         if not self.wndMain:
