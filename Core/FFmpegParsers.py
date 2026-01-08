@@ -17,7 +17,7 @@ class FFmpegBaseParser(ABC):
         "I64_MIN": -9223372036854775808,
         "I64_MAX": 9223372036854775807,
         # Use struct to get exact IEEE 754 single-precision (float) limits
-        "FLT_MIN": -struct.unpack('f', b'\xff\xff\x7f\x7f')[0],
+        "-FLT_MAX": -struct.unpack('f', b'\xff\xff\x7f\x7f')[0],
         "FLT_MAX": struct.unpack('f', b'\xff\xff\x7f\x7f')[0],
         # Double precision limits from Python's own float info
         "DBL_MIN": -sys.float_info.max,
@@ -216,93 +216,97 @@ class FFmpegBaseParser(ABC):
         return data
 
 class FFmpegGlobalsParser(FFmpegBaseParser):
-    def __init__(self, **kwargs):
-        super().__init__(**kwargs)
+    def __init__(self, ffmpeg_path="ffmpeg", disk_cache_file="cache.json", **kwargs):
+        super().__init__(ffmpeg_path, disk_cache_file, **kwargs)
         self._full_help_output = None
-        # Maps the human-readable header in FFmpeg to our internal section names
-        self._section_map = {
+        self._header_to_section = {
             "Video options": "video",
             "Advanced Video options": "video",
             "Audio options": "audio",
             "Advanced Audio options": "audio",
             "Subtitle options": "subtitle",
-            "Advanced Subtitle options": "subtitle",
-            "AVCodecContext AVOptions": "av_options"
+            "Advanced Subtitle options": "subtitle"
         }
 
-    def _normalize_name(self, name):
-        if name.startswith("-"): name = name[1:]
-        if name.startswith("b:") or name == "b":
-            return "b"
-        return name
-
     def parse_list(self):
-        """Returns the categories we want to parse as 'items' for get_all."""
-        return [
-            {"name": "video"},
-            {"name": "audio"},
-            {"name": "subtitle"},
-            {"name": "av_options"}
-        ]
+        return [{"name": "video"}, {"name": "audio"}, {"name": "subtitle"}, {"name": "av_options"}]
+
+    def _determine_target_section(self, current_section, flags):
+        if current_section != "av_options":
+            return current_section
+        if "V" in flags: return "video"
+        if "A" in flags: return "audio"
+        if "S" in flags: return "subtitle"
+        return "av_options"
 
     def parse_details(self, section_name):
-        """Parses the specific section from the full help output."""
         if not self._full_help_output:
             self._full_help_output = self._run_cmd(["-h", "full"])
 
         params = []
-        # Regex for AVOptions style: -name <type> [FLAGS] descr
-        av_param_pattern = re.compile(r"^\s{1,4}-?([\w:-]+)\s+<([^>]+)>\s+([EDVASFTR\.]{5,})\s*(.*)$")
-        # Regex for Standard style: -name type descr (No flags)
-        std_param_pattern = re.compile(r"^\s{1,4}-([\w:-]+)\s+([\w\s]+?)\s{2,}(.*)$")
-        # Regex for Options (Enums)
-        option_pattern = re.compile(r"^\s{5,14}([\w_-]+)\s+(-?\d+|0x[\da-fA-F]+)\s+([EDVASFTR\.]{5,})\s*(.*)$")
+        av_pattern = re.compile(r"^\s{1,4}-([\w:-]+)\s+<([^>]+)>\s+([EDVASFTR\.]{5,})\s*(.*)$")
+        std_pattern = re.compile(r"^\s{1,4}-([\w:-]+)\s+([\w\s]+?)\s{2,}(.*)$")
+        opt_pattern = re.compile(r"^\s{5,14}([\w_-]+)\s+(-?\d+|0x[\da-fA-F]+)\s+([EDVASFTR\.]{5,})\s*(.*)$")
 
-        current_bucket = None
+        current_header_section = None
         last_param = None
+        processing_av_options = False
 
         for line in self._full_help_output.splitlines():
-            line_stripped = line.strip()
-            if not line_stripped: continue
+            if not line.strip():
+                continue
 
-            # Detect Section Headers
+            # 1. Section Header Detection & Early Exit
             if line.endswith(":") or "AVOptions" in line:
-                header = line_stripped.rstrip(":")
-                current_bucket = self._section_map.get(header)
+                header = line.strip().rstrip(":")
+
+                # If we were already in AVOptions and find a NEW specific AVOptions section, STOP.
+                # This catches things like 'amv encoder AVOptions:', 'libx264 AVOptions:', etc.
+                if processing_av_options and "AVOptions" in line and "AVCodecContext" not in line:
+                    break
+
+                # Identify if we are entering the general AVOptions block
+                if "AVCodecContext AVOptions" in line:
+                    processing_av_options = True
+
+                current_header_section = self._header_to_section.get(header, "av_options") if "AVOptions" not in header else "av_options"
+                last_param = None
                 continue
 
-            # Only process lines if they belong to the section requested by get_all
-            if current_bucket != section_name:
+            # 2. Parameter Parsing (Only if they start with '-')
+            av_match = av_pattern.match(line)
+            std_match = std_pattern.match(line)
+
+            if av_match or std_match:
+                if av_match:
+                    name, p_type, flags, raw_descr = av_match.groups()
+                    target = self._determine_target_section(current_header_section, flags)
+                    if target == section_name:
+                        parsed = self._clean_descr(raw_descr)
+                        last_param = self._create_param_dict(name, p_type, flags, parsed, section_name)
+                        params.append(last_param)
+                    else:
+                        last_param = None
+                else:
+                    name, p_type, descr = std_match.groups()
+                    if current_header_section == section_name:
+                        parsed = {"clean_descr": descr.strip(), "min": None, "max": None, "default": None}
+                        last_param = self._create_param_dict(name, p_type, ".....", parsed, section_name)
+                        params.append(last_param)
+                    else:
+                        last_param = None
                 continue
 
-            # 1. Try parsing as AVOption (Common in AVCodecContext)
-            p_match = av_param_pattern.match(line)
-            if p_match:
-                name, p_type, flags, raw_descr = p_match.groups()
-                parsed = self._clean_descr(raw_descr)
-                last_param = self._create_param_dict(self._normalize_name(name), p_type, flags, parsed, section_name)
-                params.append(last_param)
-                continue
-
-            # 2. Try parsing as Standard Option (Common in Video/Audio sections)
-            s_match = std_param_pattern.match(line)
-            if s_match:
-                name, p_type, descr = s_match.groups()
-                # Standard options don't have the context flags, so we pass a dummy string '.....'
-                last_param = self._create_param_dict(self._normalize_name(name), p_type, ".....", {"clean_descr": descr.strip(), "min":None, "max":None, "default":None}, section_name)
-                params.append(last_param)
-                continue
-
-            # 3. Parse Sub-options (Enums)
-            o_match = option_pattern.match(line)
-            if o_match and last_param:
-                opt_name, opt_val, opt_flags, opt_descr = o_match.groups()
-                if not any(o["name"] == opt_name for o in last_param["options"]):
+            # 3. Choice/Option Parsing (Nested under last_param)
+            opt_match = opt_pattern.match(line)
+            if opt_match and last_param:
+                if not line.strip().startswith("-"):
+                    o_name, o_val, o_flags, o_descr = opt_match.groups()
                     last_param["options"].append({
-                        "name": opt_name,
-                        "value": self._to_num(opt_val),
-                        "descr": opt_descr.strip(),
-                        "context": self._map_flags(opt_flags)
+                        "name": o_name,
+                        "value": self._to_num(o_val),
+                        "descr": o_descr.strip(),
+                        "context": self._map_flags(o_flags)
                     })
 
         return {"parameters": params}
@@ -345,42 +349,88 @@ class FFmpegFilterParser(FFmpegBaseParser):
         return data
 
 class FFmpegCodecParser(FFmpegBaseParser):
-    def _create_param_dict(self, name, p_type, flags, parsed, section):
-        """Override to only show encoder/decoder booleans."""
-        base = super()._create_param_dict(name, p_type, flags, parsed, section)
-        for key in ["for_muxer", "for_demuxer"]:
-            base.pop(key, None)
-        return base
-
     def parse_list(self):
         output = self._run_cmd(["-codecs"])
-        codecs = []
-        pattern = re.compile(r"^\s([D.][E.][VASDT.][I.][L.][S.])\s+([\w-]+)\s+(.*)$")
+        codec_map = {}
+        # We track which names were identified as 'parents' (rogue names) to exclude them
+        rogue_names = set()
+
+        # Regex captures: 1. Flags, 2. Name, 3. Description
+        pattern = re.compile(r"^\s([D.E.VASDT.ILS.]{6})\s+([\w-]+)\s+(.*)$")
+
         for line in output.splitlines():
             match = pattern.match(line)
-            if match:
-                flags, main_name, descr_full = match.groups()
-                decoders = re.search(r"\(decoders: ([^)]+)\)", descr_full)
-                encoders = re.search(r"\(encoders: ([^)]+)\)", descr_full)
-                names = set(decoders.group(1).split() if decoders else []) | set(encoders.group(1).split() if encoders else [])
-                if not names: names.add(main_name)
-                for name in sorted(list(names)):
-                    codecs.append({
-                        "name": name, "parent_codec": main_name if name != main_name else None,
-                        "descr": descr_full.split('(')[0].strip(),
-                        "flags": {"decoder": flags[0] == 'D', "encoder": flags[1] == 'E', "lossy": flags[4] == 'L'}
-                    })
-        return codecs
+            if not match:
+                continue
+
+            flags_raw, main_name, descr_full = match.groups()
+
+            # Identify bracketed wrappers
+            dec_match = re.search(r"\(decoders:\s*([^)]+)\)", descr_full)
+            enc_match = re.search(r"\(encoders:\s*([^)]+)\)", descr_full)
+
+            # CLEANING LOGIC:
+            # If brackets exist, main_name (e.g., 'av1') is a rogue name and MUST be excluded.
+            if dec_match or enc_match:
+                rogue_names.add(main_name)
+
+                # Process actual usable handlers from brackets
+                line_handlers = []
+                if dec_match:
+                    for d in dec_match.group(1).split():
+                        line_handlers.append({"name": d, "is_dec": True, "is_enc": False})
+                if enc_match:
+                    for e in enc_match.group(1).split():
+                        line_handlers.append({"name": e, "is_dec": False, "is_enc": True})
+
+                for h in line_handlers:
+                    name = h["name"]
+                    # Clean description: remove everything from the first bracket
+                    clean_descr = descr_full.split('(')[0].strip()
+
+                    if name not in codec_map:
+                        codec_map[name] = {
+                            "name": name,
+                            "descr": clean_descr,
+                            "flags": {
+                                "decoder": h["is_dec"], "encoder": h["is_enc"],
+                                "video": flags_raw[2] == 'V', "audio": flags_raw[2] == 'A',
+                                "subtitle": flags_raw[2] == 'S', "lossy": flags_raw[4] == 'L'
+                            }
+                        }
+                    else:
+                        codec_map[name]["flags"]["decoder"] |= h["is_dec"]
+                        codec_map[name]["flags"]["encoder"] |= h["is_enc"]
+            else:
+                # No brackets: The main name is a legitimate standalone codec (like wmav1)
+                # Only add if it hasn't been flagged as a rogue name earlier
+                if main_name not in rogue_names:
+                    codec_map[main_name] = {
+                        "name": main_name,
+                        "descr": descr_full.strip(),
+                        "flags": {
+                            "decoder": flags_raw[0] == 'D', "encoder": flags_raw[1] == 'E',
+                            "video": flags_raw[2] == 'V', "audio": flags_raw[2] == 'A',
+                            "subtitle": flags_raw[2] == 'S', "lossy": flags_raw[4] == 'L'
+                        }
+                    }
+
+        # FINAL GUARD: Remove any name that was ever flagged as a rogue/parent name
+        for rogue in rogue_names:
+            codec_map.pop(rogue, None)
+
+        return sorted(list(codec_map.values()), key=lambda x: x["name"])
 
     def parse_details(self, item_name):
+        """Probes parameters only for the filtered list of valid handlers."""
         output = self._run_cmd(["-h", f"encoder={item_name}"])
-        if "Unknown" in output or not output:
+        if "Unknown" in output or not output.strip():
             output = self._run_cmd(["-h", f"decoder={item_name}"])
 
-        data = self._parse_av_options(output)
-        header_match = re.search(r"(?:Encoder|Decoder)\s+([\w_-]+)", output)
-        data["name"] = header_match.group(1) if header_match else item_name
-        return data
+        if not output or "Unknown" in output:
+            return {"parameters": []}
+
+        return self._parse_av_options(output)
 
 class FFmpegFormatParser(FFmpegBaseParser):
     def _create_param_dict(self, name, p_type, flags, parsed, section):

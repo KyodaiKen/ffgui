@@ -11,15 +11,22 @@ from pathlib import Path
 all_types = UICore.get_all_types()
 
 class TemplateEditorWindow(Gtk.ApplicationWindow):
-    def __init__(self, parent_window, template, on_save_callback=None, locked_type=None,**kwargs):
+    def __init__(self, parent_window, template, on_save_callback=None, locked_type=None, **kwargs):
         super().__init__(**kwargs, title="Template Editor")
         self.on_save_callback = on_save_callback
         self.locked_type = locked_type
         self.selected_codec = ""
 
-        self.schemas = {
-            "encoders": self._load_yaml("./codecs/pyav_codec_parameters.yaml")
-        }
+        self.encoder_keys_group = Gtk.SizeGroup(mode=Gtk.SizeGroupMode.HORIZONTAL)
+        self.schemas = {}
+
+        # Safely get the application instance
+        self.app = self.get_application()
+        if not self.app:
+            self.app = Gtk.Application.get_default()
+
+        if not self.app or not hasattr(self.app, 'ffmpeg_data'):
+            print("Warning: ffmpeg_data not found in App instance")
 
         # Set window size
         self.set_size_request(640, 480)
@@ -27,108 +34,10 @@ class TemplateEditorWindow(Gtk.ApplicationWindow):
         self.set_transient_for(parent_window)
         self.set_modal(True)
 
-        # Create a CSS Provider
-        css_provider = Gtk.CssProvider()
-        css_provider.load_from_data("""
-            .codec-tag {
-                background-color: alpha(@theme_fg_color, 0.05);
-                border: 1px solid mix(@theme_fg_color, @theme_bg_color, 0.8);
-                border-radius: 6px;
-                padding: 2px;
-            }
-            .codec-tag label {
-                margin: 0 6px 0 0;
-                font-weight: bold;
-                line-height: 100%;
-            }
-            
-            /* Neutralize the 'activatable' hover effect inside the dropdown button */
-            dropdown > button > box > stack > row.activatable:hover,
-            dropdown > button > box > stack > row.activatable:selected,
-            dropdown > button > box > stack > row.activatable {
-                background-color: transparent;
-                background-image: none;
-                box-shadow: none;
-                outline: none;
+        self._setup_css()
+        self._build_ui()
 
-            }
-
-            /* Style the flag selection button to look clickable but different from entries */
-            menubutton.text-button {
-                padding-left: 8px;
-                padding-right: 8px;
-            }
-            
-            /* Ensure the popover doesn't get too wide */
-            popover box {
-                min-width: 150px;
-            }
-        """, -1)
-
-        # Apply the provider to the display
-        Gtk.StyleContext.add_provider_for_display(
-            Gdk.Display.get_default(),
-            css_provider,
-            Gtk.STYLE_PROVIDER_PRIORITY_USER
-        )
-
-        # Setup Main Layout
-        main_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=6)
-        main_box.props.margin_start = 6
-        main_box.props.margin_end = 6
-        main_box.props.margin_top = 6
-        main_box.props.margin_bottom = 6
-        self.set_child(main_box)
-
-        # Top Section: Name, Type, Codec (Your existing code)
-        grid = Gtk.Grid(row_spacing=10, column_spacing=10)
-        main_box.append(grid)
-
-        grid.attach(Gtk.Label(label="Name:", halign=Gtk.Align.END), 0, 0, 1, 1)
-        self.entry_name = Gtk.Entry(hexpand=True)
-        grid.attach(self.entry_name, 1, 0, 1, 1)
-
-        grid.attach(Gtk.Label(label="Type:", halign=Gtk.Align.END), 0, 1, 1, 1)
-        self.combo_type = Gtk.DropDown.new_from_strings([t.capitalize() for t in all_types])
-        self.combo_type.props.hexpand = False
-        self.combo_type.props.halign = Gtk.Align.START
-        self.combo_type.set_size_request(108,-1)
-        self.combo_type.connect("notify::selected", self.on_type_changed)
-        grid.attach(self.combo_type, 1, 1, 1, 1)
-
-        grid.attach(Gtk.Label(label="Codec:", halign=Gtk.Align.END), 0, 2, 1, 1)
-        self.codec_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL)
-        grid.attach(self.codec_box, 1, 2, 1, 1)
-
-        # Separator
-        main_box.append(Gtk.Separator())
-
-        # Dual List Section
-        list_container = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=18, vexpand=True)
-        main_box.append(list_container)
-
-        # LEFT COLUMN: Encoder Options (Old Private Options)
-        col_left = self.create_list_column("Encoder Options", "list-add-symbolic", self.on_add_encoder_param)
-        self.lst_encoder = col_left._list
-        list_container.append(col_left)
-
-        # RIGHT COLUMN: Filters (Replaces Stream Options)
-        col_right = self.create_filter_column()
-        self.lst_filters = col_right._list
-        list_container.append(col_right)
-
-        # Size Groups for alignment
-        self.encoder_keys_group = Gtk.SizeGroup(mode=Gtk.SizeGroupMode.HORIZONTAL)
-
-        # Footer
-        btn_save = Gtk.Button(label="Save Template")
-        btn_save.add_css_class("suggested-action")
-        btn_save.props.hexpand = False
-        btn_save.props.halign = Gtk.Align.END
-        btn_save.connect("clicked", self.on_save_clicked)
-        main_box.append(btn_save)
-
-        # Load existing data
+        # Load existing data or defaults
         if template:
             self.template = copy.deepcopy(template)
         else:
@@ -142,15 +51,94 @@ class TemplateEditorWindow(Gtk.ApplicationWindow):
                     "parameters": {"options": {}}
                 }
             }
-        
-        # 2. Sync selected_codec from the now-existing self.template
+
         self.selected_codec = self.template['data']['codec']
 
-        # 3. Now load the data into the UI (this will trigger signals safely)
         if template:
             self.load_structured_template(self.template)
-        
+
         self.update_codec_ui()
+
+    def _setup_css(self):
+        css_provider = Gtk.CssProvider()
+        css_provider.load_from_data("""
+            .codec-tag {
+                background-color: alpha(@theme_fg_color, 0.05);
+                border: 1px solid mix(@theme_fg_color, @theme_bg_color, 0.8);
+                border-radius: 6px;
+                padding: 2px;
+            }
+            .codec-tag label {
+                margin: 0 6px 0 0;
+                font-weight: bold;
+                line-height: 100%;
+            }
+            dropdown > button > box > stack > row.activatable:hover,
+            dropdown > button > box > stack > row.activatable:selected,
+            dropdown > button > box > stack > row.activatable {
+                background-color: transparent;
+                background-image: none;
+                box-shadow: none;
+                outline: none;
+            }
+            menubutton.text-button {
+                padding-left: 8px;
+                padding-right: 8px;
+            }
+            popover box {
+                min-width: 150px;
+            }
+        """, -1)
+        Gtk.StyleContext.add_provider_for_display(
+            Gdk.Display.get_default(),
+            css_provider,
+            Gtk.STYLE_PROVIDER_PRIORITY_USER
+        )
+
+    def _build_ui(self):
+        main_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=6)
+        main_box.set_margin_start(6)
+        main_box.set_margin_end(6)
+        main_box.set_margin_top(6)
+        main_box.set_margin_bottom(6)
+        self.set_child(main_box)
+
+        grid = Gtk.Grid(row_spacing=10, column_spacing=10)
+        main_box.append(grid)
+
+        grid.attach(Gtk.Label(label="Name:", halign=Gtk.Align.END), 0, 0, 1, 1)
+        self.entry_name = Gtk.Entry(hexpand=True)
+        grid.attach(self.entry_name, 1, 0, 1, 1)
+
+        grid.attach(Gtk.Label(label="Type:", halign=Gtk.Align.END), 0, 1, 1, 1)
+        self.combo_type = Gtk.DropDown.new_from_strings([t.capitalize() for t in all_types])
+        self.combo_type.set_halign(Gtk.Align.START)
+        self.combo_type.set_size_request(108, -1)
+        self.combo_type.connect("notify::selected", self.on_type_changed)
+        grid.attach(self.combo_type, 1, 1, 1, 1)
+
+        grid.attach(Gtk.Label(label="Codec:", halign=Gtk.Align.END), 0, 2, 1, 1)
+        self.codec_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL)
+        grid.attach(self.codec_box, 1, 2, 1, 1)
+
+        main_box.append(Gtk.Separator())
+
+        list_container = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=18, vexpand=True)
+        main_box.append(list_container)
+
+        col_left = self.create_list_column("Encoder Options", "list-add-symbolic", self.on_add_encoder_param)
+        self.lst_encoder = col_left._list
+        list_container.append(col_left)
+
+        col_right = self.create_filter_column()
+        self.lst_filters = col_right._list
+        list_container.append(col_right)
+
+        btn_save = Gtk.Button(label="Save Template")
+        btn_save.add_css_class("suggested-action")
+        btn_save.set_halign(Gtk.Align.END)
+        btn_save.connect("clicked", self.on_save_clicked)
+        main_box.append(btn_save)
 
     def _load_yaml(self, path):
         try:
@@ -161,16 +149,12 @@ class TemplateEditorWindow(Gtk.ApplicationWindow):
             return {}
 
     def create_list_column(self, title, icon, add_callback):
-        """Creates a column with a header-integrated Add button."""
         box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=6, hexpand=True)
-
         header_hbox = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
         lbl = Gtk.Label(label=f"<b>{title}</b>", use_markup=True, xalign=0, hexpand=True)
         btn_add = Gtk.Button(icon_name=icon)
         btn_add.add_css_class("flat")
-        btn_add.set_tooltip_text(f"Add {title}")
         btn_add.connect("clicked", add_callback)
-
         header_hbox.append(lbl)
         header_hbox.append(btn_add)
         box.append(header_hbox)
@@ -181,15 +165,11 @@ class TemplateEditorWindow(Gtk.ApplicationWindow):
         lst.add_css_class("boxed-list")
         scroll.set_child(lst)
         box.append(scroll)
-
         box._list = lst
         return box
 
     def create_filter_column(self):
-        """Specialized column for Filters with a mode dropdown."""
         box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=6, hexpand=True)
-
-        # Header with Label and Add Button
         header_hbox = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
         lbl = Gtk.Label(label="<b>Filters</b>", use_markup=True, xalign=0, hexpand=True)
         btn_add = Gtk.Button(icon_name="list-add-symbolic")
@@ -199,7 +179,6 @@ class TemplateEditorWindow(Gtk.ApplicationWindow):
         header_hbox.append(btn_add)
         box.append(header_hbox)
 
-        # Filter Mode Dropdown
         mode_hbox = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
         mode_hbox.append(Gtk.Label(label="Filter Type:", xalign=0))
         self.combo_filter_mode = Gtk.DropDown.new_from_strings(["Simple", "Complex"])
@@ -213,74 +192,45 @@ class TemplateEditorWindow(Gtk.ApplicationWindow):
         lst.add_css_class("boxed-list")
         scroll.set_child(lst)
         box.append(scroll)
-
         box._list = lst
         return box
 
-    def on_add_encoder_param(self, _):
-        """Opens the new EncoderParameterPickerWindow."""
-        def on_selected(key, schema):
-            self.add_row_to_list(self.lst_encoder, key=key, schema=schema)
+    # --- ROW MANAGEMENT ---
 
-        codec_params = self.schemas["encoders"].get(self.selected_codec, {}).get("parameters", {})
-        picker = EncoderParameterPickerWindow(self, self.selected_codec, codec_params, on_selected)
-        picker.present()
-
-    def on_add_filter(self, _):
-        # Implementation for adding filter rows
-        pass
-
-    def add_row_to_list(self, listbox, key="", value="", schema=None):
-        """Adds a parameter row based on the FFmpeg/Codec schema."""
-        row_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
-
-        # --- PART 1: THE KEY (LHS) ---
-        # Using a button that opens the picker to change the parameter
-        btn_key = Gtk.Button(label=key if key else "Select...")
-        btn_key.set_size_request(150, -1) # Maintain some alignment
-        self.encoder_keys_group.add_widget(btn_key)
-
-        # Determine which picker to open if clicked again
-        if listbox == self.lst_encoder:
-            btn_key.connect("clicked", lambda b: self.on_encoder_picker_clicked(b, listbox))
-        else:
-            # Placeholder for filter picker logic
-            btn_key.connect("clicked", lambda b: print("Filter picker not implemented"))
-
-        # --- PART 2: THE VALUE (RHS) ---
+    def create_value_widget(self, key, value, schema):
+        """Standardized factory to create the RHS widget based on schema."""
         value_widget = None
 
-        # If no schema provided, try to find it in our loaded encoders schema
+        # Fix the fallback to use the dynamic app data instead of self.schemas
         if not schema and key:
-            schema = self.schemas["encoders"].get(self.selected_codec, {}).get("parameters", {}).get(key)
+            params = self.get_codec_params_list()
+            schema = next((p for p in params if p.get('name') == key), None)
 
         if schema:
             p_type = schema.get("type", "string")
             options = schema.get("options")
 
-            # 1. Enums -> DropDown
             if p_type == "enum" and options:
                 choices = []
-                # Map technical values to human descriptions
+                tech_values = []
                 if isinstance(options, dict):
-                    row_box._tech_values = [str(k) for k in options.keys()]
+                    tech_values = [str(k) for k in options.keys()]
                     choices = [f"{v.get('sdesc', k)} ({v.get('ldesc', '')})" for k, v in options.items()]
                 else:
-                    row_box._tech_values = [str(o) for o in options]
+                    tech_values = [str(o) for o in options]
                     choices = [str(o) for o in options]
 
                 model = Gtk.StringList.new(choices)
                 value_widget = Gtk.DropDown(model=model)
+                value_widget._tech_values = tech_values
                 value_widget.set_hexpand(True)
 
-                # Set initial selection
-                if value and hasattr(row_box, "_tech_values"):
+                if value:
                     try:
-                        idx = row_box._tech_values.index(str(value))
+                        idx = tech_values.index(str(value))
                         value_widget.set_selected(idx)
                     except ValueError: pass
 
-            # 2. Numbers -> SpinButton
             elif p_type in ["integer", "float"]:
                 is_int = (p_type == "integer")
                 adj = Gtk.Adjustment(
@@ -292,11 +242,14 @@ class TemplateEditorWindow(Gtk.ApplicationWindow):
                 value_widget = Gtk.SpinButton(adjustment=adj, numeric=True)
                 if not is_int: value_widget.set_digits(2)
 
-            # 3. Flags -> MenuButton with Popover
             elif p_type == "flags" and options:
                 value_widget = Gtk.MenuButton(label="None Selected", hexpand=True)
                 popover = Gtk.Popover()
-                vbox = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=4, margin_all=8)
+                vbox = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=4)
+                vbox.set_margin_start(6)
+                vbox.set_margin_end(6)
+                vbox.set_margin_top(6)
+                vbox.set_margin_bottom(6)
 
                 selected_flags = str(value).split("+") if value else []
                 check_buttons = {}
@@ -317,19 +270,33 @@ class TemplateEditorWindow(Gtk.ApplicationWindow):
                 value_widget._check_buttons = check_buttons
                 update_flag_label()
 
-            # 4. Boolean -> Switch
             elif p_type == "boolean":
                 value_widget = Gtk.Switch()
                 value_widget.set_active(str(value).lower() in ['true', '1', 'on'])
                 value_widget.set_halign(Gtk.Align.START)
 
-        # Fallback to Entry
         if not value_widget:
             value_widget = Gtk.Entry(text=str(value), hexpand=True)
 
-        # --- PART 3: DELETE BUTTON & ASSEMBLY ---
+        return value_widget
+
+    def add_row_to_list(self, listbox, key="", value="", schema=None):
+        row_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
+
+        btn_key = Gtk.Button(label=key if key else "Select...")
+        btn_key.set_size_request(150, -1)
+
+        # This will now find the attribute successfully
+        self.encoder_keys_group.add_widget(btn_key)
+
+        if listbox == self.lst_encoder:
+            btn_key.connect("clicked", lambda b: self.on_encoder_picker_clicked(b, listbox))
+
+        value_widget = self.create_value_widget(key, value, schema)
+        value_widget.set_hexpand(True)
+        value_widget.set_halign(Gtk.Align.FILL)
+
         btn_del = Gtk.Button(icon_name="user-trash-symbolic")
-        btn_del.add_css_class("flat")
 
         row_box.append(btn_key)
         row_box.append(value_widget)
@@ -342,85 +309,123 @@ class TemplateEditorWindow(Gtk.ApplicationWindow):
         btn_del.connect("clicked", lambda *_: listbox.remove(row))
         listbox.append(row)
 
-    def on_encoder_picker_clicked(self, button, listbox):
-        """Pass the pre-loaded Encoder schema to the picker"""
-        from UI.EncoderParameterPickerWindow import EncoderParameterPickerWindow
+    def refresh_row_value_widget(self, row, key, schema):
+        """Swaps the value widget in an existing row."""
+        row_box = row.get_child()
+        key_button = row._key_widget
+        old_value_widget = row._val_widget
 
+        row_box.remove(old_value_widget)
+        new_value_widget = self.create_value_widget(key, "", schema)
+
+        row_box.insert_child_after(new_value_widget, key_button)
+        row._val_widget = new_value_widget
+
+    # --- CALLBACKS & LOGIC ---
+
+    def get_codec_params_list(self):
+        # Search the list of codecs for the one currently selected in the UI
+        all_codecs = self.app.ffmpeg_data.get('codecs', [])
+        codec_obj = next((c for c in all_codecs if c['name'] == self.selected_codec), None)
+
+        # Return the actual parameters list (where 'preset' lives)
+        return codec_obj.get("parameters", []) if codec_obj else []
+
+    def on_add_encoder_param(self, _):
         def on_selected(key, schema):
-            parent_row = button.get_ancestor(Gtk.ListBoxRow)
-            if parent_row:
-                listbox.remove(parent_row)
-            self.add_row_to_list(listbox, key=key, is_custom=True, schema=schema)
+            self.add_row_to_list(self.lst_encoder, key=key, schema=schema)
 
-        # Pass only the parameters for the currently selected codec
-        codec_schema = self.schemas["encoders"].get(self.selected_codec, {}).get("parameters", {})
-        picker = EncoderParameterPickerWindow(self, self.selected_codec, codec_schema, on_selected)
+        current_type = self.get_selected_type()
+
+        # Use the helper that now has the Gtk.Application.get_default() fallback
+        codec_schema = self.get_codec_params_list()
+
+        picker = EncoderParameterPickerWindow(
+            self, self.selected_codec, current_type, codec_schema, on_selected
+        )
         picker.present()
 
-    def remove_row(self, listbox, row, is_custom):
-        # Remove from SizeGroup before removing from listbox
-        if is_custom:
-            self.private_keys_group.remove_widget(row._key_widget)
-        else:
-            self.global_keys_group.remove_widget(row._key_widget)
-            
-        listbox.remove(row)
+    def on_encoder_picker_clicked(self, button, listbox):
+        row = button.get_parent().get_parent()
 
-    def on_add_global(self, _):
-        self.add_row_to_list(self.lst_global, is_custom=False)
+        def on_selected(new_key, new_schema):
+            button.set_label(new_key)
+            self.refresh_row_value_widget(row, new_key, new_schema)
 
-    def on_add_private(self, _):
-        self.add_row_to_list(self.lst_private, is_custom=True)
+        current_type = self.get_selected_type()
 
-    def on_probe_picker_clicked(self, button, listbox):
-        """Pass the pre-loaded PyAV schema to the picker"""
-        def on_param_selected(key, schema):
-            parent_row = button.get_ancestor(Gtk.ListBoxRow)
-            if parent_row:
-                listbox.remove(parent_row)
-            self.add_row_to_list(listbox, key=key, is_custom=False, schema=schema)
+        # Use the same helper here
+        codec_schema = self.get_codec_params_list()
 
-        # Pass the pre-loaded dictionary directly
-        stream_schema = self.schemas["pyav"].get("stream", {}).get("parameters", {})
-        picker = ParameterPickerWindow(self, stream_schema, on_param_selected)
+        picker = EncoderParameterPickerWindow(
+            self, self.selected_codec, current_type, codec_schema, on_selected
+        )
         picker.present()
+
+    def on_add_filter(self, _):
+        # Placeholder
+        pass
+
+    def on_type_changed(self, dropdown, pspec):
+        new_type = self.get_selected_type()
+        self.template['data']['type'] = new_type
+
+    def on_codec_selected(self, codec):
+        self.selected_codec = codec
+        self.template['data']['codec'] = codec
+        self.update_codec_ui()
+
+    def on_change_codec_clicked(self, button):
+        current_type = self.locked_type if self.locked_type else self.get_selected_type()
+        wnd = CodecPickerWindow(
+            parent_window=self,
+            codec_type=current_type,
+            on_select=self.on_codec_selected
+        )
+        wnd.present()
+
+    def update_codec_ui(self):
+        while child := self.codec_box.get_first_child():
+            self.codec_box.remove(child)
+
+        tag = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=0)
+        tag.add_css_class("codec-tag")
+
+        lbl = Gtk.Label(label=self.selected_codec)
+        lbl.set_margin_start(8)
+        lbl.set_margin_end(8)
+        tag.append(lbl)
+
+        btn_edit = Gtk.Button(icon_name="search-symbolic")
+        btn_edit.set_has_frame(False)
+        btn_edit.connect("clicked", self.on_change_codec_clicked)
+        tag.append(btn_edit)
+
+        self.codec_box.append(tag)
 
     def load_structured_template(self, template):
         data = template.get('data', {})
-        self.entry_name.props.text = template['name']
-        if template['name']:
-            self.entry_name.props.can_focus = False
-            self.entry_name.props.editable = False
-        self.selected_codec = data['codec']
-        params = data.get('parameters', {})
+        self.entry_name.set_text(template['name'])
 
-        # Set the DropDown index based on the type string
+        if template['name']:
+            self.entry_name.set_editable(False)
+            self.entry_name.set_can_focus(False)
+
         if self.locked_type:
             try:
-                # Force the index to match the locked type
-                type_idx = all_types.index(self.locked_type.lower())
-                self.combo_type.set_selected(type_idx)
-                # Lock the UI
-                self.combo_type.set_sensitive(False) 
-                self.combo_type.set_tooltip_text(f"Type is locked to {self.locked_type} for this context.")
-            except ValueError:
-                pass
+                idx = all_types.index(self.locked_type.lower())
+                self.combo_type.set_selected(idx)
+                self.combo_type.set_sensitive(False)
+            except ValueError: pass
         else:
             try:
-                type_idx = all_types.index(data.get('type', 'video').lower())
-                self.combo_type.set_selected(type_idx)
-            except ValueError:
-                pass
-        
-        # Load Globals (parameters:)
-        for k, v in params.items():
-            if k != 'options':
-                self.add_row_to_list(self.lst_global, k, v, is_custom=False)
-        
-        # Load Privates (parameters: options:)
-        options = params.get('options', {})
+                idx = all_types.index(data.get('type', 'video').lower())
+                self.combo_type.set_selected(idx)
+            except ValueError: pass
+
+        options = data.get('parameters', {}).get('options', {})
         for k, v in options.items():
-            self.add_row_to_list(self.lst_private, k, v, is_custom=True)
+            self.add_row_to_list(self.lst_encoder, k, v)
 
     def get_template_yaml_data(self):
         output = {
@@ -433,7 +438,6 @@ class TemplateEditorWindow(Gtk.ApplicationWindow):
             }
         }
 
-        # Extract Encoder Options
         row = self.lst_encoder.get_first_child()
         while row:
             key = row._key_widget.get_label()
@@ -441,115 +445,57 @@ class TemplateEditorWindow(Gtk.ApplicationWindow):
                 output["parameters"]["options"][key] = self.extract_widget_value(row)
             row = row.get_next_sibling()
 
-        # ... Add Filter extraction logic here ...
         return output
 
-    def update_codec_ui(self):
-        """Refreshes the 'pill' display for the codec"""
-        while child := self.codec_box.get_first_child():
-            self.codec_box.remove(child)
-        
-        # Create the pill (similar to DispositionTag but specific for the one choice)
-        tag = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=0)
-        tag.add_css_class("codec-tag") 
-        
-        lbl = Gtk.Label(label=self.selected_codec)
-        lbl.set_margin_start(8)
-        lbl.set_margin_end(8)
-        tag.append(lbl)
-        
-        btn_edit = Gtk.Button(icon_name="search-symbolic", tooltip_text="Search For Codec")
-        btn_edit.set_has_frame(False)
-        btn_edit.connect("clicked", self.on_change_codec_clicked)
-        tag.append(btn_edit)
-        
-        self.codec_box.append(tag)
-
-    def on_type_changed(self, dropdown, pspec):
-        """Triggered when user changes Video/Audio/Subtitle etc."""
-        new_type = self.get_selected_type()
-        self.template['data']['type'] = new_type
-        print(f"Template type updated to: {new_type}")
-
-    def on_codec_selected(self, codec):
-        """Triggered when user picks a codec from the search window"""
-        self.selected_codec = codec
-        self.template['data']['codec'] = codec # Keep the dictionary in sync
-        self.update_codec_ui()
-
-    def on_change_codec_clicked(self, button):
-        # Pass the CURRENT type from the template data to the picker
-        current_type = self.locked_type if self.locked_type else self.get_selected_type()
-        wnd = CodecPickerWindow(
-            parent_window=self, 
-            codec_type=current_type, 
-            on_select=self.on_codec_selected
-        )
-        wnd.present()
+    def extract_widget_value(self, row):
+        w = row._val_widget
+        if isinstance(w, Gtk.DropDown):
+            return w._tech_values[w.get_selected()]
+        elif isinstance(w, Gtk.SpinButton):
+            return w.get_value()
+        elif isinstance(w, Gtk.Switch):
+            return w.get_active()
+        elif isinstance(w, Gtk.MenuButton):
+            # Flag extraction logic
+            active = [k for k, (cb, _) in w._check_buttons.items() if cb.get_active()]
+            return "+".join(active)
+        elif isinstance(w, Gtk.Entry):
+            return w.get_text()
+        return ""
 
     def get_selected_type(self):
         idx = self.combo_type.get_selected()
         return all_types[idx]
-    
+
     def on_save_clicked(self, button):
-        # 1. Collect the data from the UI
-        template_name = self.entry_name.get_text().strip()
-        
-        if not template_name:
-            # Simple validation to ensure we have a filename
-            self.show_error_dialog("Template name cannot be empty.")
+        name = self.entry_name.get_text().strip()
+        if not name:
+            self.show_error_dialog("Name cannot be empty.")
             return
 
-        # 2. Get the structured data (the method we built earlier)
         yaml_data = self.get_template_yaml_data()
 
-        # --- CUSTOM SERIALIZATION LOGIC ---
-        
-        class LiteralDumper(yaml.SafeDumper):
-            """Custom dumper to force quotes on strings and handle formatting"""
-            pass
-
-        # def string_representer(dumper, data):
-        #     # Force single quotes for all strings to ensure 'constrained' 
-        #     # is handled as a literal string
-        #     return dumper.represent_scalar('tag:yaml.org,2002:str', data, style="'")
-        
-        # LiteralDumper.add_representer(str, string_representer)
-        
-        # 3. Determine the save path
-        # If we are editing (template exists), use its path. 
-        # Otherwise, use the ./templates/ directory in the current working dir.
         if self.template['path']:
             save_path = Path(self.template['path'])
         else:
             base_dir = Path("./templates")
-            base_dir.mkdir(exist_ok=True) # Ensure directory exists
-            save_path = base_dir / f"{template_name}.yaml"
+            base_dir.mkdir(exist_ok=True)
+            save_path = base_dir / f"{name}.yaml"
 
         try:
-            # 4. Write to disk
             with open(save_path, 'w') as f:
-                # We save only the 'data' part to the YAML file to match your structure
                 yaml.dump(yaml_data, f, sort_keys=False, indent=4)
-            
-            print(f"Successfully saved template to {save_path}")
-            
             if self.on_save_callback:
-                self.on_save_callback(template_name)
-                
+                self.on_save_callback(name)
             self.destroy()
-            
         except Exception as e:
-            self.show_error_dialog(f"Failed to save template: {str(e)}")
+            self.show_error_dialog(str(e))
 
     def show_error_dialog(self, message):
-        # Quick helper for feedback
         dialog = Gtk.MessageDialog(
-            transient_for=self,
-            modal=True,
+            transient_for=self, modal=True,
             message_type=Gtk.MessageType.ERROR,
-            buttons=Gtk.ButtonsType.OK,
-            text=message
+            buttons=Gtk.ButtonsType.OK, text=message
         )
         dialog.connect("response", lambda d, r: d.destroy())
         dialog.show()

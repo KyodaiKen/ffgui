@@ -50,18 +50,25 @@ class CodecPickerWindow(Gtk.ApplicationWindow):
 
     def get_filtered_codecs(self):
         filtered = []
-        # codecs_available is a set of names
-        for name in sorted(av.codec.codecs_available):
-            try:
-                c = av.codec.Codec(name, mode='w')
-                # We only want encoders (for templates) and matching the type
-                if c.is_encoder and c.type == self.codec_type:
-                    filtered.append({
-                        "id": c.name,
-                        "long": c.long_name
-                    })
-            except:
-                continue
+
+        # Access the application instance to get the cached JSON data
+        app = Gtk.Application.get_default()
+        if not app or not hasattr(app, 'ffmpeg_data'):
+            return filtered
+
+        # Get the codec list from your JSON (e.g., negative.json and positive.json)
+        codecs_list = app.ffmpeg_data.get('codecs', [])
+
+        for codec in codecs_list:
+            flags = codec.get('flags', {})
+            # Match only encoders and the correct stream type (video/audio)
+            if flags.get('encoder') and flags.get(self.codec_type):
+                filtered.append({
+                    "id": codec.get("name"),
+                    "long": codec.get("descr") # Use 'descr' from your JSON
+                })
+
+        # Always add the copy option
         filtered.append({
             "id": "copy",
             "long": "Copy (no transcoding)"

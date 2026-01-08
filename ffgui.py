@@ -15,7 +15,8 @@ from Core.FFmpegParsers import (
     FFmpegCodecParser,
     FFmpegFormatParser,
     FFmpegPixelFormatParser,
-    FFmpegMediaInfoParser
+    FFmpegMediaInfoParser,
+    FFmpegGlobalsParser
 )
 
 class FFGuiApp(Gtk.Application):
@@ -33,10 +34,11 @@ class FFGuiApp(Gtk.Application):
 
         # Initialize Parsers
         self.parsers = {
-            "filters": FFmpegFilterParser(self.ffmpeg_full_exec_path, self.cache_dir / "filters.json"),
+            "globals": FFmpegGlobalsParser(self.ffmpeg_full_exec_path, self.cache_dir / "globals.json"),
             "codecs": FFmpegCodecParser(self.ffmpeg_full_exec_path, self.cache_dir / "codecs.json"),
-            "formats": FFmpegFormatParser(self.ffmpeg_full_exec_path, self.cache_dir / "formats.json"),
             "pix_fmts": FFmpegPixelFormatParser(self.ffmpeg_full_exec_path, self.cache_dir / "pix_fmts.json"),
+            "formats": FFmpegFormatParser(self.ffmpeg_full_exec_path, self.cache_dir / "formats.json"),
+            "filters": FFmpegFilterParser(self.ffmpeg_full_exec_path, self.cache_dir / "filters.json"),
             "media": FFmpegMediaInfoParser(self.ffprobe_full_exec_path)
         }
 
