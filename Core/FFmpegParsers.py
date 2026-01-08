@@ -1,4 +1,5 @@
 from abc import ABC, abstractmethod
+from fractions import Fraction
 import subprocess
 import sys
 import struct
@@ -106,7 +107,7 @@ class FFmpegBaseParser(ABC):
 
         for i, item in enumerate(items):
             status = f"  > [{i+1}/{len(items)}] {item['name']}"
-            self._notify(f"\r{status}{clear_line}", progress_callback, end='')
+            self._notify(f"\r{status}{clear_line}", progress_callback, end='') # Triggers granular_callback
 
             details = self.parse_details(item['name'])
             if isinstance(details, dict):
@@ -297,60 +298,59 @@ class FFmpegFormatParser(FFmpegBaseParser):
         return base
 
     def parse_list(self):
-        output = self._run_cmd(["-codecs"])
-        codecs_map = {}
+        # FIX 1: Run -formats, not -codecs
+        output = self._run_cmd(["-formats"])
+        formats_map = {}
 
-        # Pattern: [D.][E.][V.][A.][S.] name description
-        pattern = re.compile(r"^\s([D\.])([E\.])([VAS\.])([S\.])([D\.])([T\.])\s+([\w_-]+)\s+(.*)$")
+        # FIX 2: Correct Regex for -formats output
+        # Pattern: [D ][E ] name description
+        pattern = re.compile(r"^\s([D\s])([E\s])\s+([\w,]+)\s+(.*)$")
 
         for line in output.splitlines():
             match = pattern.match(line)
             if match:
-                can_dec, can_enc, type_char, draw_horiz, direct_rend, weird_flag, name, descr = match.groups()
+                can_demux, can_mux, name_str, descr = match.groups()
 
-                # Use name as primary key to merge Encoder/Decoder info
-                if name not in codecs_map:
-                    codecs_map[name] = {
-                        "name": name,
+                # Formats often have multiple names: "matroska,webm"
+                names = name_str.split(',')
+                primary_id = names[0]
+
+                if primary_id not in formats_map:
+                    formats_map[primary_id] = {
+                        "name": primary_id,
+                        "aliases": names[1:],
                         "descr": descr.strip(),
-                        "type": {"V": "video", "A": "audio", "S": "subtitle"}.get(type_char, "other"),
-                        "is_encoder": False,
-                        "is_decoder": False,
-                        "capabilities": {
-                            "draw_horiz": draw_horiz == 'S',
-                            "direct_rend": direct_rend == 'D'
-                        }
+                        "is_demuxer": False,
+                        "is_muxer": False
                     }
 
-                if can_enc == 'E': codecs_map[name]["is_encoder"] = True
-                if can_dec == 'D': codecs_map[name]["is_decoder"] = True
+                if can_demux == 'D': formats_map[primary_id]["is_demuxer"] = True
+                if can_mux == 'E':   formats_map[primary_id]["is_muxer"] = True
 
-        return list(codecs_map.values())
+        return list(formats_map.values())
 
     def parse_details(self, item_name):
-        # Codecs don't have "extensions" like formats, but they have "supported_pix_fmts"
-        # or "supported_samplerates" in their help output.
-        final = {"name": item_name, "parameters": [], "supported_pix_fmts": [], "supported_sample_rates": []}
+        # FIX 3: Details for formats use -h muxer= and -h demuxer=
+        final = {"name": item_name, "parameters": [], "extensions": []}
 
-        for cmd_type in ["encoder", "decoder"]:
+        for cmd_type in ["muxer", "demuxer"]:
             output = self._run_cmd(["-h", f"{cmd_type}={item_name}"])
             if not output or "Unknown" in output:
                 continue
 
-            # Capture supported pixel formats or sample rates
-            pix_match = re.search(r"Supported pixel formats: (.*?)\n", output)
-            if pix_match:
-                fmts = [f.strip() for f in pix_match.group(1).split(' ')]
-                final["supported_pix_fmts"] = list(set(final["supported_pix_fmts"] + fmts))
+            # Extra metadata parsing for formats
+            ext_match = re.search(r"Common extensions: (.*?)\.", output)
+            if ext_match:
+                exts = [e.strip() for e in ext_match.group(1).split(',')]
+                final["extensions"] = list(set(final.get("extensions", []) + exts))
 
             res = self._parse_av_options(output)
             for p in res["parameters"]:
-                existing = next((x for x in final["parameters"] if x["name"] == p["name"] and x["section"] == p["section"]), None)
-                if existing:
-                    existing["for_encoder"] = existing.get("for_encoder", False) or p.get("for_encoder", False)
-                    existing["for_decoder"] = existing.get("for_decoder", False) or p.get("for_decoder", False)
-                else:
+                # Check for duplicates across muxer/demuxer details
+                existing = next((x for x in final["parameters"] if x["name"] == p["name"]), None)
+                if not existing:
                     final["parameters"].append(p)
+
         return final
 
 class FFmpegPixelFormatParser(FFmpegBaseParser):
@@ -381,14 +381,107 @@ class FFmpegPixelFormatParser(FFmpegBaseParser):
     def parse_details(self, item_name):
         return {"parameters": [], "capabilities": {}, "supports": {}}
 
+class FFmpegMediaInfoParser:
+    def __init__(self, probe_size=26214400, analyze_duration=120000000):
+        self.probe_size = probe_size
+        self.analyze_duration = analyze_duration
+
+    def get_media_info(self, filename):
+        cmd = [
+            "ffprobe",
+            "-probesize", str(self.probe_size),
+            "-analyzeduration", str(self.analyze_duration),
+            "-v", "quiet",
+            "-of", "json",
+            "-show_streams",
+            "-show_format",
+            filename
+        ]
+
+        try:
+            result = subprocess.run(cmd, capture_output=True, text=True, check=True)
+            raw_data = json.loads(result.stdout)
+            return self._refine_data(raw_data)
+        except Exception as e:
+            return {"error": str(e)}
+
+    def _to_fraction(self, value_str):
+        """Safely converts '60000/1001' or '16:9' to a Fraction."""
+        if not value_str or value_str in ("0/0", "0:0"):
+            return None
+        try:
+            # Handle both colon (16:9) and slash (16/9) separators
+            normalized = value_str.replace(":", "/")
+            return Fraction(normalized)
+        except (ValueError, ZeroDivisionError):
+            return None
+
+    def _to_timedelta(self, value_str):
+        """Converts second strings (e.g. '338.070375') to timedelta."""
+        if value_str is None:
+            return None
+        try:
+            return timedelta(seconds=float(value_str))
+        except ValueError:
+            return None
+
+    def _refine_data(self, data):
+        # 1. Refine Format (Container) level
+        if "format" in data:
+            f = data["format"]
+            f["td_duration"] = self._to_timedelta(f.get("duration"))
+            f["td_start_time"] = self._to_timedelta(f.get("start_time"))
+
+        # 2. Refine Streams
+        if "streams" in data:
+            for stream in data["streams"]:
+                # Duration/Time handling
+                stream["td_duration"] = self._to_timedelta(stream.get("duration"))
+                stream["td_start_time"] = self._to_timedelta(stream.get("start_time"))
+
+                # Fraction Conversions
+                for key in ["r_frame_rate", "avg_frame_rate", "time_base"]:
+                    if key in stream:
+                        stream[f"frac_{key}"] = self._to_fraction(stream[key])
+
+                # Display Aspect Ratio (DAR) Logic
+                if stream.get("codec_type") == "video":
+                    # Priority 1: Use the existing display_aspect_ratio from JSON
+                    dar_str = stream.get("display_aspect_ratio")
+                    dar_frac = self._to_fraction(dar_str)
+
+                    # Priority 2: Calculate if DAR is missing or invalid
+                    if dar_frac is None:
+                        width = stream.get("width")
+                        height = stream.get("height")
+                        if width and height:
+                            dar_frac = Fraction(width, height)
+                            # Apply SAR if available
+                            sar_str = stream.get("sample_aspect_ratio")
+                            sar_frac = self._to_fraction(sar_str)
+                            if sar_frac:
+                                dar_frac *= sar_frac
+
+                    stream["frac_display_aspect_ratio"] = dar_frac
+
+                # Numeric Casting for clean JSON
+                for key in ["bit_rate", "nb_frames", "width", "height"]:
+                    if key in stream and isinstance(stream[key], str):
+                        try:
+                            stream[key] = int(stream[key])
+                        except ValueError: pass
+
+        return data
+
+
 if __name__ == "__main__":
     # Create cache folder if it doesn't exist
     os.makedirs("../.cache", exist_ok=True)
 
-    filter_p = FFmpegFilterParser(disk_cache_file="../.cache/cache_filters.json")
-    codec_p  = FFmpegCodecParser(disk_cache_file="../.cache/cache_codecs.json")
-    format_p = FFmpegFormatParser(disk_cache_file="../.cache/cache_formats.json")
-    pix_p    = FFmpegPixelFormatParser(disk_cache_file="../.cache/cache_pix_fmts.json")
+    filter_p = FFmpegFilterParser(disk_cache_file=".cache/ffmpeg/filters.json")
+    codec_p  = FFmpegCodecParser(disk_cache_file=".cache/ffmpeg/codecs.json")
+    format_p = FFmpegFormatParser(disk_cache_file=".cache/ffmpeg/formats.json")
+    pix_p    = FFmpegPixelFormatParser(disk_cache_file=".cache/ffmpeg/pix_fmts.json")
 
     all_filters = filter_p.get_all()
     all_codecs  = codec_p.get_all()
