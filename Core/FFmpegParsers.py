@@ -215,6 +215,98 @@ class FFmpegBaseParser(ABC):
                 })
         return data
 
+class FFmpegGlobalsParser(FFmpegBaseParser):
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        self._full_help_output = None
+        # Maps the human-readable header in FFmpeg to our internal section names
+        self._section_map = {
+            "Video options": "video",
+            "Advanced Video options": "video",
+            "Audio options": "audio",
+            "Advanced Audio options": "audio",
+            "Subtitle options": "subtitle",
+            "Advanced Subtitle options": "subtitle",
+            "AVCodecContext AVOptions": "av_options"
+        }
+
+    def _normalize_name(self, name):
+        if name.startswith("-"): name = name[1:]
+        if name.startswith("b:") or name == "b":
+            return "b"
+        return name
+
+    def parse_list(self):
+        """Returns the categories we want to parse as 'items' for get_all."""
+        return [
+            {"name": "video"},
+            {"name": "audio"},
+            {"name": "subtitle"},
+            {"name": "av_options"}
+        ]
+
+    def parse_details(self, section_name):
+        """Parses the specific section from the full help output."""
+        if not self._full_help_output:
+            self._full_help_output = self._run_cmd(["-h", "full"])
+
+        params = []
+        # Regex for AVOptions style: -name <type> [FLAGS] descr
+        av_param_pattern = re.compile(r"^\s{1,4}-?([\w:-]+)\s+<([^>]+)>\s+([EDVASFTR\.]{5,})\s*(.*)$")
+        # Regex for Standard style: -name type descr (No flags)
+        std_param_pattern = re.compile(r"^\s{1,4}-([\w:-]+)\s+([\w\s]+?)\s{2,}(.*)$")
+        # Regex for Options (Enums)
+        option_pattern = re.compile(r"^\s{5,14}([\w_-]+)\s+(-?\d+|0x[\da-fA-F]+)\s+([EDVASFTR\.]{5,})\s*(.*)$")
+
+        current_bucket = None
+        last_param = None
+
+        for line in self._full_help_output.splitlines():
+            line_stripped = line.strip()
+            if not line_stripped: continue
+
+            # Detect Section Headers
+            if line.endswith(":") or "AVOptions" in line:
+                header = line_stripped.rstrip(":")
+                current_bucket = self._section_map.get(header)
+                continue
+
+            # Only process lines if they belong to the section requested by get_all
+            if current_bucket != section_name:
+                continue
+
+            # 1. Try parsing as AVOption (Common in AVCodecContext)
+            p_match = av_param_pattern.match(line)
+            if p_match:
+                name, p_type, flags, raw_descr = p_match.groups()
+                parsed = self._clean_descr(raw_descr)
+                last_param = self._create_param_dict(self._normalize_name(name), p_type, flags, parsed, section_name)
+                params.append(last_param)
+                continue
+
+            # 2. Try parsing as Standard Option (Common in Video/Audio sections)
+            s_match = std_param_pattern.match(line)
+            if s_match:
+                name, p_type, descr = s_match.groups()
+                # Standard options don't have the context flags, so we pass a dummy string '.....'
+                last_param = self._create_param_dict(self._normalize_name(name), p_type, ".....", {"clean_descr": descr.strip(), "min":None, "max":None, "default":None}, section_name)
+                params.append(last_param)
+                continue
+
+            # 3. Parse Sub-options (Enums)
+            o_match = option_pattern.match(line)
+            if o_match and last_param:
+                opt_name, opt_val, opt_flags, opt_descr = o_match.groups()
+                if not any(o["name"] == opt_name for o in last_param["options"]):
+                    last_param["options"].append({
+                        "name": opt_name,
+                        "value": self._to_num(opt_val),
+                        "descr": opt_descr.strip(),
+                        "context": self._map_flags(opt_flags)
+                    })
+
+        return {"parameters": params}
+
 class FFmpegFilterParser(FFmpegBaseParser):
     def _create_param_dict(self, name, p_type, flags, parsed, section):
             """Override to remove muxer/encoder booleans for filters."""
@@ -476,21 +568,25 @@ class FFmpegMediaInfoParser:
         return data
 
 
+
 if __name__ == "__main__":
     # Create cache folder if it doesn't exist
-    os.makedirs("../.cache", exist_ok=True)
+    os.makedirs(".cache", exist_ok=True)
 
+    globals_p = FFmpegGlobalsParser(disk_cache_file=".cache/ffmpeg/globals.json")
     filter_p = FFmpegFilterParser(disk_cache_file=".cache/ffmpeg/filters.json")
     codec_p  = FFmpegCodecParser(disk_cache_file=".cache/ffmpeg/codecs.json")
     format_p = FFmpegFormatParser(disk_cache_file=".cache/ffmpeg/formats.json")
     pix_p    = FFmpegPixelFormatParser(disk_cache_file=".cache/ffmpeg/pix_fmts.json")
 
-    all_filters = filter_p.get_all()
+    all_globals = globals_p.get_all()
     all_codecs  = codec_p.get_all()
-    all_formats = format_p.get_all()
     all_pix_fmts = pix_p.get_all()
+    all_formats = format_p.get_all()
+    all_filters = filter_p.get_all()
 
-    print(f"\nTotal Filters: {len(all_filters)}")
-    print(f"Total Codecs:  {len(all_codecs)}")
-    print(f"Total Formats: {len(all_formats)}")
+    print(f"\nTotal Globals:     {len(all_globals)}")
+    print(f"Total Codecs:        {len(all_codecs)}")
     print(f"Total Pixel Formats: {len(all_pix_fmts)}")
+    print(f"Total Formats:       {len(all_formats)}")
+    print(f"Total Filters:       {len(all_filters)}")

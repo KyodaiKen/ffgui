@@ -171,7 +171,7 @@ class JobSetupWindow(Gtk.ApplicationWindow):
         self.output_subgrid.attach(self.output_dir_box, 2, 1, 1, 1)
 
         # Initial UI Refresh
-        self.selected_container = "matroska" 
+        self.selected_container = "auto"
         self.update_container_ui()
 
         self.btn_ok = Gtk.Button(label="OK")
@@ -225,24 +225,31 @@ class JobSetupWindow(Gtk.ApplicationWindow):
         self.global_metadata = meta
 
     def get_stream_description(self, stream):
-        """Generates description with average bitrate from JSON data."""
+        """Generates description with decimal FPS and kbps bitrate."""
         meta = stream.get('metadata', {})
         title = meta.get('title') or meta.get('NAME') or ""
 
-        # Calculate Bitrate string in kb/s
+        # Consistent bitrate labeling
         bitrate_val = stream.get('bit_rate')
-        bitrate_str = f", {int(bitrate_val)//1000} kb/s" if bitrate_val else ""
+        bitrate_str = f", ~{int(bitrate_val) // 1000} kbps" if bitrate_val else ""
 
         title_prefix = f"{title} " if title else ""
         codec_long = stream.get('codec_long_name', 'Unknown Codec')
         codec_type = stream.get('codec_type', 'unknown')
 
         if codec_type == 'video':
-            fps = stream.get('avg_frame_rate', '0/0')
+            fps_frac = stream.get('frac_avg_frame_rate')
+            fps_display = "0"
+            if fps_frac:
+                fps_decimal = float(fps_frac)
+                fps_display = f"{fps_decimal:.3f}".rstrip('0').rstrip('.')
+                if fps_frac.denominator != 1:
+                    fps_display += f" ({fps_frac.numerator}/{fps_frac.denominator})"
+
             width = stream.get('width', '?')
             height = stream.get('height', '?')
             pix_fmt = stream.get('pix_fmt', 'unknown')
-            return f"{title_prefix}(Video) {codec_long}, {width}x{height}, {pix_fmt}, {fps} FPS{bitrate_str}"
+            return f"{title_prefix}(Video) {codec_long}, {width}x{height}, {pix_fmt}, {fps_display} FPS{bitrate_str}"
 
         elif codec_type == 'audio':
             sr = stream.get('sample_rate', '?')
@@ -280,93 +287,101 @@ class JobSetupWindow(Gtk.ApplicationWindow):
         return None
     
     def get_sources(self):
-        # 1. Save current state of entries before we clear them
         self.save_stream_state()
         self.lst_source_streams.remove_all()
 
         for source_path in self.source_paths:
             file_title = get_file_title(source_path)
 
-            #try:
-            # Use the parser instead of PyAV
-            media_info = self.app.parsers['media'].get_info(source_path)
+            try:
+                media_info = self.app.parsers['media'].get_info(source_path)
+                if "error" in media_info:
+                    raise Exception(media_info["error"])
 
-            # Check if parser returned an error
-            if "error" in media_info:
-                raise Exception(media_info["error"])
+                fmt = media_info.get('format', {})
 
-            fmt = media_info.get('format', {})
+                # 1. Get Container Bitrate
+                # ffprobe returns bitrate in bits/sec as a string or int
+                raw_bitrate = fmt.get('bit_rate')
+                container_br_str = ""
+                if raw_bitrate:
+                    kbps = int(raw_bitrate) // 1000
+                    container_br_str = f"{kbps} kbps"
 
-            # Calculate and format duration
-            duration_secs = float(fmt.get('duration', 0))
-            duration_str = format_duration(duration_secs)
+                # 2. Get Duration
+                duration_secs = float(fmt.get('duration', 0))
+                duration_str = format_duration(duration_secs)
 
-            # Grab global metadata
-            if not self.global_metadata and fmt.get('metadata'):
-                self.global_metadata = dict(fmt['metadata'])
-                # Apply visual style to metadata button if tags exist
-                self.btn_global_meta.add_css_class("suggested-action")
+                # --- Create Header Row ---
+                header_hbox = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=12)
+                header_hbox.set_margin_top(6)
+                header_hbox.set_margin_end(24)
+                header_hbox.set_margin_bottom(3)
 
-            # --- Create Header Row (Filename and Duration) ---
-            header_hbox = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=12)
-            header_hbox.set_margin_top(6)
-            header_hbox.set_margin_end(24)
-            header_hbox.set_margin_bottom(3)
+                lbl_file = Gtk.Label(label=f"<big><b>{file_title}</b></big>",
+                                     use_markup=True, xalign=0, hexpand=True)
+                lbl_file.set_ellipsize(Pango.EllipsizeMode.END)
+                header_hbox.append(lbl_file)
 
-            lbl_file = Gtk.Label(label=f"<big><b>{file_title}</b></big>",
-                                    use_markup=True, xalign=0, hexpand=True)
-            lbl_file.set_ellipsize(Pango.EllipsizeMode.END)
-            header_hbox.append(lbl_file)
+                # Add Bitrate Label (New)
+                if container_br_str:
+                    lbl_br = Gtk.Label(label=container_br_str, xalign=1)
+                    lbl_br.add_css_class("caption") # Use a smaller/dimmer style if desired
+                    lbl_br.set_margin_end(6)
+                    header_hbox.append(lbl_br)
 
-            lbl_dur = Gtk.Label(label=duration_str, xalign=1)
-            header_hbox.append(lbl_dur)
+                # Duration Label
+                lbl_dur = Gtk.Label(label=duration_str, xalign=1)
+                header_hbox.append(lbl_dur)
 
-            header_row = Gtk.ListBoxRow(selectable=False)
-            header_row.set_child(header_hbox)
-            self.lst_source_streams.append(header_row)
+                header_row = Gtk.ListBoxRow(selectable=False)
+                header_row.set_child(header_hbox)
+                self.lst_source_streams.append(header_row)
 
-            # --- Add individual streams ---
-            for stm_idx, stream in enumerate(media_info.get('streams', [])):
-                desc = self.get_stream_description(stream)
-                # ffprobe uses 'codec_type' instead of 'type'
-                stype = stream.get('codec_type', 'unknown')
-                existing_meta = dict(stream.get('metadata', {}))
+                GLib.idle_add(self.do_scroll_to_row, header_row)
 
-                row = SourceStreamRow(desc, stype, source_path, stm_idx, self, initial_metadata=existing_meta)
+                # --- Add individual streams ---
+                for stm_idx, stream in enumerate(media_info.get('streams', [])):
+                    desc = self.get_stream_description(stream)
+                    # ffprobe uses 'codec_type' instead of 'type'
+                    stype = stream.get('codec_type', 'unknown')
+                    existing_meta = dict(stream.get('metadata', {}))
 
-                # Restore from cache
-                key = (source_path, stm_idx)
-                if key in self.selected_streams:
-                    data = self.selected_streams[key]
-                    row.chk.set_active(data["active"])
-                    row.ent_tpl.set_text(data["template"])
-                    row.ent_dsp.set_text(data["disposition"])
-                    row.ent_lng.set_text(data['language'])
-                    if "metadata" in data:
-                        row.stream_metadata = data["metadata"]
-                        row.update_meta_button_style()
-                else:
-                    if stype in ['video', 'audio']:
-                        row.chk.set_active(True)
+                    row = SourceStreamRow(desc, stype, source_path, stm_idx, self, initial_metadata=existing_meta)
 
-                self.lst_source_streams.append(row)
+                    # Restore from cache
+                    key = (source_path, stm_idx)
+                    if key in self.selected_streams:
+                        data = self.selected_streams[key]
+                        row.chk.set_active(data["active"])
+                        row.ent_tpl.set_text(data["template"])
+                        row.ent_dsp.set_text(data["disposition"])
+                        row.ent_lng.set_text(data['language'])
+                        if "metadata" in data:
+                            row.stream_metadata = data["metadata"]
+                            row.update_meta_button_style()
+                    else:
+                        if stype in ['video', 'audio']:
+                            row.chk.set_active(True)
 
-            # except Exception as e:
-            #     error_row = Gtk.ListBoxRow(selectable=False)
-            #     error_label = Gtk.Label(label=f"  Error parsing {file_title}: {e}", xalign=0)
-            #     error_label.add_css_class("error")
-            #     error_row.set_child(error_label)
-            #     self.lst_source_streams.append(error_row)
+                    self.lst_source_streams.append(row)
+
+            except Exception as e:
+                error_row = Gtk.ListBoxRow(selectable=False)
+                error_label = Gtk.Label(label=f"  Error parsing {file_title}: {e}", xalign=0)
+                error_label.add_css_class("error")
+                error_row.set_child(error_label)
+                self.lst_source_streams.append(error_row)
 
     def do_scroll_to_row(self, row):
         """Manually scrolls the ScrolledWindow to the position of a specific row"""
         # Get the vertical adjustment of the scrolled window
         adj = self.scroll_streams.get_vadjustment()
-        
+
         # Find the row's position relative to the ListBox
         # We translate (0,0) of the row into the coordinate space of the ListBox
         _, y = row.translate_coordinates(self.lst_source_streams, 0, 0)
-        
+
         if y > 0:
             # Set the adjustment value to the row's 'y' coordinate
             # This aligns the top of the row with the top of the scroll area
@@ -385,6 +400,7 @@ class JobSetupWindow(Gtk.ApplicationWindow):
         self.get_sources()
 
     def add_file_to_list(self, file):
+        """Adds file to top list and sets initial defaults."""
         label = Gtk.Label(label=file.get_path(), tooltip_text=file.get_path())
         label.set_xalign(0.0)
         label.set_ellipsize(Pango.EllipsizeMode.MIDDLE)
@@ -393,34 +409,21 @@ class JobSetupWindow(Gtk.ApplicationWindow):
         self.lst_source_files.append(label)
 
         path_str = file.get_path()
-
-        # If this is the first file, set up defaults
         if self.entry_name.get_text() == "":
-            file_title = get_file_title(path_str)
-            self.entry_name.set_text(file_title)
-            
-            # Default output directory to the source directory
+            self.entry_name.set_text(get_file_title(path_str))
             if self.entry_output_dir.get_text() == "":
                 import os
                 self.entry_output_dir.set_text(os.path.dirname(path_str))
 
     def on_file_drop(self, target, value, x, y):
-        # 'value' will be a Gdk.FileList object
         files = value.get_files()
-        
         for file in files:
             info = file.query_info("standard::type", Gio.FileQueryInfoFlags.NONE, None)
-            file_type = info.get_file_type()
-
-            if file_type == Gio.FileType.DIRECTORY:
-                continue
-            
-            # If it's a regular file, add it to your ListBox
-            self.add_file_to_list(file)
+            if info.get_file_type() != Gio.FileType.DIRECTORY:
+                self.add_file_to_list(file)
 
         self.sync_data_model()
-            
-        return True # Return True to indicate the drop was handled
+        return True
     
     def on_add_clicked(self, button):
         dialog = Gtk.FileDialog.new()
@@ -429,21 +432,13 @@ class JobSetupWindow(Gtk.ApplicationWindow):
 
     def on_add_dialog_finish(self, dialog, result):
         try:
-            # Retrieve the GListModel of Gio.File objects
             files_list_model = dialog.open_multiple_finish(result)
-            
             if files_list_model:
-                # Iterate through the returned ListModel
                 for i in range(files_list_model.get_n_items()):
-                    file = files_list_model.get_item(i)
-                    # Use your existing method to update UI and Data Model
-                    self.add_file_to_list(file)
-                
+                    self.add_file_to_list(files_list_model.get_item(i))
                 self.sync_data_model()
-                    
         except Exception as e:
-            # This catches if the user cancels the dialog
-            print(f"File selection cancelled or failed: {e}")
+            print(f"Error selecting files: {e}")
 
     def on_move_up_clicked(self, button):
         selected_rows = self.lst_source_files.get_selected_rows()

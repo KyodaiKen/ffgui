@@ -1,8 +1,0 @@
-type: video
-codec: libx264
-parameters:
-    options:
-        preset: placebo
-        profile: high
-        crf: 20
-    colorspace: yuv420p

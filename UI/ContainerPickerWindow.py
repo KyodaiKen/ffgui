@@ -94,32 +94,24 @@ class ContainerPickerWindow(Gtk.ApplicationWindow):
             self.lst_formats.remove(child)
 
         search = filter_text.lower()
-        formats_data = self.app.ffmpeg_data.get('formats', []) # formats.json is a list of dicts
 
-        # Get types currently checked (video, audio, etc.)
-        active_types = self.get_active_stream_types()
+        # --- ALWAYS add "auto" first ---
+        if not search or "auto" in search:
+            self.add_format_row("auto", "Automatic (Inferred from extension)")
 
-        for fmt in formats_data:
-            # 1. Only show formats that can mux (output)
-            if not fmt.get('is_muxer'):
-                continue
+        # Access the raw list from the formats.json cache
+        formats_list = self.app.ffmpeg_data.get('formats', [])
 
-            # 2. Search filter
+        for fmt in formats_list:
+            if not fmt.get('is_muxer'): continue
+
             name = fmt.get('name', '')
-            descr = fmt.get('descr', '').lower()
-            if search and (search not in name.lower() and search not in descr):
-                continue
+            descr = fmt.get('descr', '')
 
-            # 3. Codec Compatibility Check
-            # For strictness, you can check if a container supports the active types
-            # Most modern muxers in formats.json list extensions
-            if active_types:
-                # Basic example: if only audio is selected, you might filter for audio containers
-                # Specific codec-level support requires deeper mapping, but type-checking
-                # provides a good first-pass filter.
-                pass
-
-            self.add_format_row(name, fmt.get('descr', ''))
+            if search in name.lower() or search in descr.lower():
+                # Avoid duplicates if a real format is named 'auto'
+                if name.lower() != "auto":
+                    self.add_format_row(name, descr)
 
     def add_format_row(self, fmt_id, long_name):
         row_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=12, margin_top=6, margin_bottom=6)

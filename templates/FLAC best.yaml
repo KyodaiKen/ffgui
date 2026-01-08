@@ -1,5 +1,0 @@
-type: audio
-codec: flac
-parameters:
-    options:
-        compression_level: 8

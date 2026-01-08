@@ -1,9 +1,0 @@
-type: video
-codec: libsvtav1
-parameters:
-    options:
-        crf: 28
-        preset: 5
-        tune: '0'
-        rc: '0'
-    profile: main

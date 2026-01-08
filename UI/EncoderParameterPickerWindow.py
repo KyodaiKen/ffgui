@@ -1,98 +1,67 @@
 import gi
-import yaml
 gi.require_version("Gtk", "4.0")
 from gi.repository import Gtk, Pango
 
-class EncoderParameterPickerWindow(Gtk.Window):
-    def __init__(self, parent_window, codec, codec_schema, on_select):
-        super().__init__(title=f"Encoder Options: {codec}", transient_for=parent_window, modal=True)
-        self.set_default_size(450, 550)
+class EncoderParameterPickerWindow(Gtk.ApplicationWindow):
+    def __init__(self, parent_window, codec_name, schema_data, on_select, **kwargs):
+        super().__init__(**kwargs, title=f"Options for {codec_name}")
         self.on_select = on_select
-        self.codec = codec
+        self.set_default_size(450, 500)
+        self.set_transient_for(parent_window)
+        self.set_modal(True)
 
-        # Use the passed-in schema directly
-        self.codec_params = codec_schema
+        self.params = []
+        # schema_data here is the 'parameters' dict for the specific codec
+        if isinstance(schema_data, dict):
+            for key, info in schema_data.items():
+                self.params.append({
+                    "name": key,
+                    "label": info.get("label", key),
+                    "help": info.get("help", "No description available"),
+                    "type": info.get("type", "string"),
+                    "schema": info
+                })
 
-        # UI Setup: HeaderBar with SearchEntry
+        # UI Setup
         hb = Gtk.HeaderBar()
         self.set_titlebar(hb)
-        
-        self.search_entry = Gtk.SearchEntry(placeholder_text=f"Search {codec} options...")
+        self.search_entry = Gtk.SearchEntry(placeholder_text="Filter options...")
         self.search_entry.connect("search-changed", self.on_search_changed)
         hb.set_title_widget(self.search_entry)
-
-        # 3. Main Layout
-        main_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=0)
-        self.set_child(main_box)
 
         self.lst_params = Gtk.ListBox()
         self.lst_params.add_css_class("boxed-list")
         self.lst_params.connect("row-activated", self.on_row_activated)
-        
-        scroll = Gtk.ScrolledWindow(vexpand=True)
-        scroll.set_margin_top(6)
-        scroll.set_margin_start(6)
-        scroll.set_margin_end(6)
-        scroll.set_margin_bottom(6)
-        scroll.set_child(self.lst_params)
-        main_box.append(scroll)
 
-        # Initial population
+        scroll = Gtk.ScrolledWindow(vexpand=True)
+        scroll.set_child(self.lst_params)
+        self.set_child(scroll)
+
         self.populate_list()
 
     def populate_list(self, filter_text=""):
-        # Clear existing rows
         while child := self.lst_params.get_first_child():
             self.lst_params.remove(child)
-        
-        if not self.codec_params:
-            empty_lbl = Gtk.Label(label=f"No schema found for '{self.codec}'")
-            empty_lbl.set_margin_top(20)
-            self.lst_params.append(empty_lbl)
-            return
 
-        # Filter and sort by Label or Key
-        search_term = filter_text.lower()
-        sorted_keys = sorted(self.codec_params.keys())
-
-        for key in sorted_keys:
-            info = self.codec_params[key]
-            label = info.get('label', key)
-            
-            # Match against key OR human-readable label
-            if not search_term or search_term in key.lower() or search_term in label.lower():
+        for p in sorted(self.params, key=lambda x: x['name']):
+            if not filter_text or filter_text.lower() in p['name'].lower() or filter_text.lower() in p['help'].lower():
                 row = Gtk.ListBoxRow()
-                box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=6)
-                box.set_margin_top(6)
-                box.set_margin_start(6)
-                box.set_margin_end(6)
-                box.set_margin_bottom(6)
-                
-                lbl_title = Gtk.Label(label=f"<b>{label}</b>", use_markup=True, xalign=0)
-                lbl_subtitle = Gtk.Label(label=f"Flag: -{key}", xalign=0)
-                lbl_subtitle.add_css_class("caption")
-                
-                # If there's a help string or long description, show it
-                help_text = info.get('help', "")
-                if help_text:
-                    lbl_help = Gtk.Label(label=help_text, xalign=0)
-                    lbl_help.add_css_class("caption")
-                    lbl_help.set_wrap(True)
-                    box.append(lbl_help)
+                box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=4, margin_top=8, margin_bottom=8, margin_start=12, margin_end=12)
 
-                box.append(lbl_title)
-                box.append(lbl_subtitle)
-                
+                lbl_key = Gtk.Label(label=f"<b>{p['name']}</b>", use_markup=True, xalign=0)
+                lbl_help = Gtk.Label(label=p['help'], xalign=0)
+                lbl_help.add_css_class("caption")
+                lbl_help.set_wrap(True)
+
+                box.append(lbl_key)
+                box.append(lbl_help)
                 row.set_child(box)
-                row._key = key
-                row._schema = info
+                row._data = p
                 self.lst_params.append(row)
 
     def on_search_changed(self, entry):
         self.populate_list(entry.get_text())
 
     def on_row_activated(self, lb, row):
-        # Safety check for the "No schema found" label row
-        if hasattr(row, "_key"):
-            self.on_select(row._key, row._schema)
-            self.destroy()
+        self.on_select(row._data['name'], row._data['schema'])
+        self.destroy()

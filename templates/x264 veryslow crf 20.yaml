@@ -1,6 +1,0 @@
-type: video
-codec: libx264
-parameters:
-    options:
-        crf: 20
-        preset: veryslow
