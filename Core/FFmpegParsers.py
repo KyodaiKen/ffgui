@@ -230,53 +230,72 @@ class FFmpegCodecParser(FFmpegBaseParser):
 
 class FFmpegFormatParser(FFmpegBaseParser):
     def parse_list(self):
-        """Parses the output of ffmpeg -formats."""
+        """Parses the output of ffmpeg -formats and merges multi-name entries."""
         output = self._run_cmd(["-formats"])
-        formats = []
 
-        # Pattern for:  DE mp4             MP4 (MPEG-4 Part 14)
-        # Flags: D (Demuxing), E (Muxing)
-        pattern = re.compile(r"^\s([D.][E.])\s+([\w,]+)\s+(.*)$")
+        # We use a dict to merge capabilities for formats that appear on multiple lines
+        format_map = {}
+
+        # Regex explanation:
+        # ^\s* -> Optional leading space
+        # ([DE. ])      -> Column 1: Demuxing (D or space)
+        # ([DE. ])      -> Column 2: Muxing (E or space)
+        # ([d. ])       -> Column 3: Device (d or space)
+        # \s+           -> Separator
+        # ([\w,]+)      -> Names (allows commas for aliases)
+        # \s+           -> Separator
+        # (.*)$         -> Description
+        pattern = re.compile(r"^\s*([DE. ])([DE. ])([d. ])\s+([\w,]+)\s+(.*)$")
 
         for line in output.splitlines():
             match = pattern.match(line)
             if match:
-                flags, name, descr = match.groups()
-                # Some names are comma-separated aliases, e.g., "mov,mp4,m4a,3gp,3g2,mj2"
-                primary_name = name.split(',')[0]
+                f_demux, f_mux, f_dev, names_raw, descr = match.groups()
 
-                formats.append({
-                    "name": name,
-                    "primary_name": primary_name,
-                    "descr": descr.strip(),
-                    "capabilities": {
-                        "demuxing": flags[0] == 'D',
-                        "muxing": flags[1] == 'E'
-                    }
-                })
-        return formats
+                # Split aliases (e.g., "mov,mp4,m4a" -> ["mov", "mp4", "m4a"])
+                names = names_raw.split(',')
+
+                for name in names:
+                    if name not in format_map:
+                        format_map[name] = {
+                            "name": name,
+                            "descr": descr.strip(),
+                            "capabilities": {
+                                "demuxing": False,
+                                "muxing": False,
+                                "device": False
+                            },
+                            "parameters": []
+                        }
+
+                    # Update capabilities (using OR logic to merge multiple lines)
+                    if f_demux == 'D': format_map[name]["capabilities"]["demuxing"] = True
+                    if f_mux == 'E':   format_map[name]["capabilities"]["muxing"] = True
+                    if f_dev == 'd':   format_map[name]["capabilities"]["device"] = True
+
+        # Convert the map back to a list for the get_all method
+        return list(format_map.values())
 
     def parse_details(self, item_name):
         """
-        Parses ffmpeg -h muxer=... and demuxer=...
-        We use the primary_name to ensure we get the correct help page.
+        Attempts to find AVOptions for either the muxer or demuxer
+        associated with this format name.
         """
-        primary_name = item_name.split(',')[0]
         params = []
 
-        # Try to get Muxer options
-        mux_out = self._run_cmd(["-h", f"muxer={primary_name}"])
+        # 1. Try Muxer help
+        mux_out = self._run_cmd(["-h", f"muxer={item_name}"])
         if "Unknown" not in mux_out:
             params.extend(self._parse_av_options(mux_out))
 
-        # Try to get Demuxer options (avoiding duplicates if they share the same help)
-        demux_out = self._run_cmd(["-h", f"demuxer={primary_name}"])
-        if "Unknown" not in demux_out and demux_out != mux_out:
+        # 2. Try Demuxer help
+        demux_out = self._run_cmd(["-h", f"demuxer={item_name}"])
+        if "Unknown" not in demux_out:
             demux_params = self._parse_av_options(demux_out)
-            # Simple deduplication by name
-            existing_names = {p['name'] for p in params}
+            # Deduplicate by parameter name
+            existing = {p['name'] for p in params}
             for p in demux_params:
-                if p['name'] not in existing_names:
+                if p['name'] not in existing:
                     params.append(p)
 
         return params
@@ -296,11 +315,3 @@ if __name__ == "__main__":
     print(f"Total Filters: {len(all_filters)}")
     print(f"Total Codecs:  {len(all_codecs)}")
     print(f"Total Formats: {len(all_formats)}")
-
-    # Search example for MP4 format
-    mp4 = next((f for f in all_formats if "mp4" in f['name']), None)
-    if mp4:
-        print(f"\nFormat: {mp4['descr']}")
-        # Show parameters like 'movflags' or 'faststart' if they exist
-        param_names = [p['name'] for p in mp4['parameters']]
-        print(f"Parameters found: {', '.join(param_names[:10])}...")
