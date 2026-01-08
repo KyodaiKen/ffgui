@@ -9,6 +9,14 @@ class FFmpegBaseParser(ABC):
         self.ffmpeg_path = ffmpeg_path
         self.disk_cache_file = disk_cache_file
 
+    def _notify(self, message, callback, end='\n'):
+        """Helper to route messages to either a callback or the console."""
+        if callback:
+            callback(message + end)
+        else:
+            # Console behavior with ANSI support
+            print(f"{message}", end=end, flush=True)
+
     def _run_cmd(self, args):
         cmd = [self.ffmpeg_path, "-hide_banner"] + args
         try:
@@ -48,20 +56,22 @@ class FFmpegBaseParser(ABC):
         """Should return the parameters/AVOptions for a specific item."""
         pass
 
-    def get_all(self, force_refresh=False):
+    def get_all(self, force_refresh=False, progress_callback=None):
         current_version = self._get_ffmpeg_version()
         cache = self._load_cache()
 
         if not force_refresh and cache and cache.get("ffmpeg_version") == current_version:
             return cache.get("data", [])
 
-        print(f"Refreshing cache for {self.__class__.__name__}...")
+        self._notify(f"Refreshing cache for {self.__class__.__name__}...", progress_callback)
         items = self.parse_list()
+        clear_line = "\033[K"
         for i, item in enumerate(items):
-            print(f"  > [{i+1}/{len(items)}] {item['name']}", end='\r')
+            status = f"  > [{i+1}/{len(items)}] {item['name']}"
+            self._notify(f"\r{status}{clear_line}", progress_callback, end='')
             item['parameters'] = self.parse_details(item['name'])
 
-        print(f"\nFinished. Saving to {self.disk_cache_file}")
+        self._notify(f"\nFinished. Saving to {self.disk_cache_file}", progress_callback)
         self._save_cache(current_version, items)
         return items
 
@@ -89,24 +99,73 @@ class FFmpegBaseParser(ABC):
         return params
 
 class FFmpegFilterParser(FFmpegBaseParser):
+    MAPPING = {
+        'A': 'audio',
+        'V': 'video',
+        'N': 'dynamic',
+        '|': 'source/sink'
+    }
+
+    def _map_stream_types(self, stream_string):
+        """Converts characters like 'AA' into ['audio', 'audio']."""
+        return [self.MAPPING.get(char, 'unknown') for char in stream_string]
+
     def parse_list(self):
+        """Parses the output of ffmpeg -filters."""
         output = self._run_cmd(["-filters"])
         filters = []
-        pattern = re.compile(r"^\s([T.][S.][C.])\s+([\w]+)\s+([AVN|]+->[AVN|]+|->[AVN|]+|[AVN|]+->)\s+(.*)$")
+
+        # Regex: Flags (T.C), Name, I/O Map (e.g., AA->A), Description
+        pattern = re.compile(r"^\s([T.][S.][C.])\s+([\w]+)\s+([AVN|]*->[AVN|]*)\s+(.*)$")
 
         for line in output.splitlines():
             match = pattern.match(line)
             if match:
-                flags, name, io, descr = match.groups()
-                in_p, out_p = io.split("->")
+                flags_raw, name, io_map, descr = match.groups()
+
+                # Split the I/O map at the arrow
+                in_str, out_str = io_map.split("->")
+
+                # Map characters to descriptive labels
+                inputs_list = self._map_stream_types(in_str)
+                outputs_list = self._map_stream_types(out_str)
+
                 filters.append({
-                    "name": name, "descr": descr.strip(), "inputs": in_p or None, "outputs": out_p or None,
-                    "type": "V" if "V" in io else "A" if "A" in io else "N" if "N" in io else "|",
-                    "flags": {"timeline": flags[0]=='T', "slice_threading": flags[1]=='S', "command": flags[2]=='C'}
+                    "name": name,
+                    "descr": descr.strip(),
+                    "inputs": inputs_list,
+                    "outputs": outputs_list,
+                    "type": self._determine_type(io_map),
+                    "flags": {
+                        "timeline": flags_raw[0] == 'T',
+                        "slice_threading": flags_raw[1] == 'S',
+                        "command_support": flags_raw[2] == 'C'
+                    },
+                    "parameters": []
                 })
         return filters
 
+    def _determine_type(self, io_map):
+        """
+        Determines the primary type of the filter.
+        Returns "mixed" if multiple types (A, V, N, |) are present.
+        """
+
+        # Find which of our target symbols exist in the string
+        found_types = [self.MAPPING[char] for char in self.MAPPING if char in io_map]
+
+        # 1. Check for "mixed" (more than one unique type found)
+        if len(found_types) > 1:
+            return "mixed"
+
+        # 2. If only one type found, return its descriptive name
+        if len(found_types) == 1:
+            return found_types[0]
+
+        return None
+
     def parse_details(self, item_name):
+        """Uses the base class AVOption parser."""
         output = self._run_cmd(["-h", f"filter={item_name}"])
         return self._parse_av_options(output)
 
@@ -133,11 +192,11 @@ class FFmpegCodecParser(FFmpegBaseParser):
                 # Determine the primary type
                 type_char = flags[2]
                 type_map = {
-                    'V': 'Video',
-                    'A': 'Audio',
-                    'S': 'Subtitle',
-                    'D': 'Data',
-                    'T': 'Attachment'
+                    'V': 'video',
+                    'A': 'audio',
+                    'S': 'subtitle',
+                    'D': 'data',
+                    'T': 'attachment'
                 }
 
                 codecs.append({
