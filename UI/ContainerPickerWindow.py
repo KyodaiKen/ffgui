@@ -6,10 +6,19 @@ import av.format
 class ContainerPickerWindow(Gtk.ApplicationWindow):
     def __init__(self, parent_window, current_val, on_select, **kwargs):
         super().__init__(**kwargs, title="Select Output Container")
+
+        # Safely get the application instance
+        self.app = parent_window.get_application()
+        if not self.app:
+            # Fallback if the window isn't fully realized yet
+            self.app = Gtk.Application.get_default()
+
         self.on_select = on_select
         self.set_default_size(450, 500)
         self.set_transient_for(parent_window)
         self.set_modal(True)
+
+        self.required_codecs = self.get_active_codecs(parent_window)
         
         # 1. Search Header
         hb = Gtk.HeaderBar()
@@ -51,34 +60,82 @@ class ContainerPickerWindow(Gtk.ApplicationWindow):
         self.populate_list()
         self.search_entry.grab_focus()
 
+    def get_active_codecs(self, parent):
+        """Identifies which codecs are currently selected for output."""
+        active_codecs = set()
+        row = parent.lst_source_streams.get_first_child()
+        while row:
+            if hasattr(row, 'chk') and row.chk.get_active():
+                # We need the codec name from the stream data
+                key = (row.source_path, row.stream_index)
+                stream_data = parent.selected_streams.get(key)
+                if stream_data:
+                    # Logic here depends on if user is 'copying' or 'encoding'
+                    # For now, we'll assume we check against the source codec
+                    pass
+            row = row.get_next_sibling()
+        return active_codecs
+
+    def get_active_stream_types(self):
+        """Helper to find what types of streams are checked in the parent UI."""
+        types = set()
+        parent = self.get_transient_for()
+        if hasattr(parent, 'lst_source_streams'):
+            row = parent.lst_source_streams.get_first_child()
+            while row:
+                if hasattr(row, 'chk') and row.chk.get_active():
+                    # Get type from the SourceStreamRow attribute
+                    types.add(row.stream_type)
+                row = row.get_next_sibling()
+        return types
+
     def populate_list(self, filter_text=""):
         while child := self.lst_formats.get_first_child():
             self.lst_formats.remove(child)
-        
-        filter_text = filter_text.lower()
-        for f in self.formats:
-            if filter_text in f["id"].lower() or filter_text in f["long"].lower():
-                row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=12)
-                row.props.margin_start = 6
-                row.props.margin_end = 6
-                row.props.margin_top = 6
-                row.props.margin_bottom = 6
-                
-                lbl_ext = Gtk.Label(xalign=0)
-                lbl_ext.set_markup(f"<b>{f["id"]}</b>")
-                lbl_ext.set_width_chars(12)
-                lbl_ext.set_xalign(0)
-                
-                lbl_name = Gtk.Label(label=f["long"], xalign=0)
-                lbl_name.set_ellipsize(Pango.EllipsizeMode.END)
-                
-                row.append(lbl_ext)
-                row.append(lbl_name)
-                
-                list_row = Gtk.ListBoxRow()
-                list_row.set_child(row)
-                list_row._data = f["id"] # Store internal ID
-                self.lst_formats.append(list_row)
+
+        search = filter_text.lower()
+        formats_data = self.app.ffmpeg_data.get('formats', []) # formats.json is a list of dicts
+
+        # Get types currently checked (video, audio, etc.)
+        active_types = self.get_active_stream_types()
+
+        for fmt in formats_data:
+            # 1. Only show formats that can mux (output)
+            if not fmt.get('is_muxer'):
+                continue
+
+            # 2. Search filter
+            name = fmt.get('name', '')
+            descr = fmt.get('descr', '').lower()
+            if search and (search not in name.lower() and search not in descr):
+                continue
+
+            # 3. Codec Compatibility Check
+            # For strictness, you can check if a container supports the active types
+            # Most modern muxers in formats.json list extensions
+            if active_types:
+                # Basic example: if only audio is selected, you might filter for audio containers
+                # Specific codec-level support requires deeper mapping, but type-checking
+                # provides a good first-pass filter.
+                pass
+
+            self.add_format_row(name, fmt.get('descr', ''))
+
+    def add_format_row(self, fmt_id, long_name):
+        row_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=12, margin_top=6, margin_bottom=6)
+
+        lbl_id = Gtk.Label(xalign=0, width_chars=12)
+        lbl_id.set_markup(f"<b>{fmt_id}</b>")
+
+        lbl_name = Gtk.Label(label=long_name, xalign=0, ellipsize=Pango.EllipsizeMode.END)
+
+        row_box.append(lbl_id)
+        row_box.append(lbl_name)
+
+        list_row = Gtk.ListBoxRow()
+        list_row.set_child(row_box)
+        list_row._data = fmt_id
+        self.lst_formats.append(list_row)
 
     def on_search_changed(self, entry):
         self.populate_list(entry.get_text())

@@ -14,7 +14,8 @@ from Core.FFmpegParsers import (
     FFmpegFilterParser,
     FFmpegCodecParser,
     FFmpegFormatParser,
-    FFmpegPixelFormatParser
+    FFmpegPixelFormatParser,
+    FFmpegMediaInfoParser
 )
 
 class FFGuiApp(Gtk.Application):
@@ -35,7 +36,8 @@ class FFGuiApp(Gtk.Application):
             "filters": FFmpegFilterParser(self.ffmpeg_full_exec_path, self.cache_dir / "filters.json"),
             "codecs": FFmpegCodecParser(self.ffmpeg_full_exec_path, self.cache_dir / "codecs.json"),
             "formats": FFmpegFormatParser(self.ffmpeg_full_exec_path, self.cache_dir / "formats.json"),
-            "pix_fmts": FFmpegPixelFormatParser(self.ffmpeg_full_exec_path, self.cache_dir / "pix_fmts.json")
+            "pix_fmts": FFmpegPixelFormatParser(self.ffmpeg_full_exec_path, self.cache_dir / "pix_fmts.json"),
+            "media": FFmpegMediaInfoParser(self.ffprobe_full_exec_path)
         }
 
     def resolve_paths(self):
@@ -144,13 +146,16 @@ class FFGuiApp(Gtk.Application):
 
     def run_introspection(self):
         try:
-            total_parsers = len(self.parsers)
+            # Filter out the media parser for counting and processing
+            cacheable_parsers = {k: v for k, v in self.parsers.items() if k != "media"}
+            total_parsers = len(cacheable_parsers)
+
             display_names = {
                 "filters": "Filter", "codecs": "Codec",
                 "formats": "Format", "pix_fmts": "Pixel Format"
             }
 
-            for idx, (key, parser) in enumerate(self.parsers.items()):
+            for idx, (key, parser) in enumerate(cacheable_parsers.items()):
                 if self.introspection_cancelled: return
 
                 base_fraction = idx / total_parsers

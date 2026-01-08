@@ -1,4 +1,5 @@
 from abc import ABC, abstractmethod
+from datetime import timedelta
 from fractions import Fraction
 import subprocess
 import sys
@@ -382,13 +383,14 @@ class FFmpegPixelFormatParser(FFmpegBaseParser):
         return {"parameters": [], "capabilities": {}, "supports": {}}
 
 class FFmpegMediaInfoParser:
-    def __init__(self, probe_size=26214400, analyze_duration=120000000):
+    def __init__(self, ffprobe_path, probe_size=26214400, analyze_duration=120000000):
         self.probe_size = probe_size
         self.analyze_duration = analyze_duration
+        self.ffprobe_path = ffprobe_path
 
-    def get_media_info(self, filename):
+    def get_info(self, filename):
         cmd = [
-            "ffprobe",
+            self.ffprobe_path,
             "-probesize", str(self.probe_size),
             "-analyzeduration", str(self.analyze_duration),
             "-v", "quiet",

@@ -10,6 +10,7 @@ import av
 class JobSetupWindow(Gtk.ApplicationWindow):
     def __init__(self, parent_window, job, **kwargs):
         super().__init__(**kwargs, title="Job Setup")
+        self.app = self.get_application()
         self.job = job
         self.source_paths = []
         # Structure: {(file_path, stream_index): {"template": "...", "disposition": "...", "active": True}}
@@ -224,42 +225,31 @@ class JobSetupWindow(Gtk.ApplicationWindow):
         self.global_metadata = meta
 
     def get_stream_description(self, stream):
-        # Logic to find a valid name/title
-        meta = stream.metadata or {}
-        title = meta.get('title') or meta.get('NAME') or meta.get('label')
-        
-        # Ignore handler-related names that aren't useful labels
-        handler_names = ['handler', 'handlername', 'videohandler', 'audiohandler', 'soundhandler']
-        handler_val = meta.get('handler_name', '').lower().replace(" ", "")
-        
-        if not title and handler_val not in handler_names:
-            title = meta.get('handler_name')
+        """Generates description with average bitrate from JSON data."""
+        meta = stream.get('metadata', {})
+        title = meta.get('title') or meta.get('NAME') or ""
 
-        title = title+" " if title else ""
+        # Calculate Bitrate string in kb/s
+        bitrate_val = stream.get('bit_rate')
+        bitrate_str = f", {int(bitrate_val)//1000} kb/s" if bitrate_val else ""
 
-        if stream.type == 'video':
-                fps = stream.average_rate
-                fps_str = ""
-                if fps and fps.numerator > 0:
-                    if fps.denominator == 1:
-                        fps_str = f"{fps.numerator}"
-                    else:
-                        fps_str = f"{fps.numerator}/{fps.denominator} ({float(fps):.4f})"
-                desc = f"{title}(Video) {stream.codec_context.codec.long_name} {stream.profile}, {stream.width}x{stream.height}, {stream.pix_fmt}, {fps_str} FPS"
-                sdesc = f"V:{stream.name.upper()}"
-            
-        elif stream.type == 'audio':
-            sr = stream.sample_rate
-            fmt = stream.format.name if stream.format else ""
-            ch = f"{stream.channels}ch"
-            desc = f"{title}(Audio) {stream.codec_context.codec.long_name}, {ch}, {fmt}, {sr} Hz"
-            sdesc = f"A:{stream.name.upper()}"
-        
-        else:
-            desc = f"{title}({stream.type}): {stream.codec.long_name}"
-            sdesc = f"{stream.name.upper()}"
+        title_prefix = f"{title} " if title else ""
+        codec_long = stream.get('codec_long_name', 'Unknown Codec')
+        codec_type = stream.get('codec_type', 'unknown')
 
-        return (desc, sdesc)
+        if codec_type == 'video':
+            fps = stream.get('avg_frame_rate', '0/0')
+            width = stream.get('width', '?')
+            height = stream.get('height', '?')
+            pix_fmt = stream.get('pix_fmt', 'unknown')
+            return f"{title_prefix}(Video) {codec_long}, {width}x{height}, {pix_fmt}, {fps} FPS{bitrate_str}"
+
+        elif codec_type == 'audio':
+            sr = stream.get('sample_rate', '?')
+            ch = f"{stream.get('channels', '?')}ch"
+            return f"{title_prefix}(Audio) {codec_long}, {ch}, {sr} Hz{bitrate_str}"
+
+        return f"{title_prefix}({codec_type}): {codec_long}{bitrate_str}"
 
     def save_stream_state(self):
         """Saves current widget values into the cache using row identity"""
@@ -296,82 +286,77 @@ class JobSetupWindow(Gtk.ApplicationWindow):
 
         for source_path in self.source_paths:
             file_title = get_file_title(source_path)
-            
-            # Open file to get container-level metadata
-            try:
-                with av.open(source_path) as media:
-                    # Calculate and format duration
-                    duration_secs = float(media.duration / 1000000) if media.duration else 0
-                    duration_str = format_duration(duration_secs)
 
-                    # Grab metadata
-                    if not self.global_metadata and media.metadata:
-                        self.global_metadata = dict(media.metadata)
-                        if self.global_metadata:
-                            self.btn_global_meta.add_css_class("suggested-action")
-                        else:
-                            self.btn_global_meta.remove_css_class("suggested-action")
+            #try:
+            # Use the parser instead of PyAV
+            media_info = self.app.parsers['media'].get_info(source_path)
 
-                    # Create a container box for the header (Title on Left, Duration on Right)
-                    header_hbox = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=12)
-                    header_hbox.set_margin_top(6)
-                    header_hbox.set_margin_end(24)
-                    header_hbox.set_margin_bottom(3)
+            # Check if parser returned an error
+            if "error" in media_info:
+                raise Exception(media_info["error"])
 
-                    # Filename Label
-                    lbl_file = Gtk.Label(label=f"<big><b>{file_title}</b></big>", 
-                                         use_markup=True, xalign=0, hexpand=True)
-                    lbl_file.set_ellipsize(Pango.EllipsizeMode.END)
-                    header_hbox.append(lbl_file)
+            fmt = media_info.get('format', {})
 
-                    # Duration Label (Normal size)
-                    lbl_dur = Gtk.Label(label=duration_str, xalign=1)
-                    header_hbox.append(lbl_dur)
+            # Calculate and format duration
+            duration_secs = float(fmt.get('duration', 0))
+            duration_str = format_duration(duration_secs)
 
-                    header_row = Gtk.ListBoxRow(selectable=False)
-                    header_row.set_child(header_hbox)
-                    self.lst_source_streams.append(header_row)
-                    last_header = header_row
+            # Grab global metadata
+            if not self.global_metadata and fmt.get('metadata'):
+                self.global_metadata = dict(fmt['metadata'])
+                # Apply visual style to metadata button if tags exist
+                self.btn_global_meta.add_css_class("suggested-action")
 
-                    # Add individual streams for this file
-                    for stm_idx, stream in enumerate(media.streams):
-                        desc, sdesc = self.get_stream_description(stream)
-                        # Extract existing metadata from PyAV
-                        existing_meta = dict(stream.metadata) if stream.metadata else {}
-                        
-                        # Create the row with the metadata
-                        row = SourceStreamRow(desc, stream.type, source_path, stm_idx, self, initial_metadata=existing_meta)
-                        
-                        # Restore from cache if user had already typed something here
-                        key = (source_path, stm_idx)
-                        if key in self.selected_streams:
-                            data = self.selected_streams[key]
-                            row.chk.set_active(data["active"])
-                            row.ent_tpl.set_text(data["template"])
-                            row.ent_dsp.set_text(data["disposition"])
-                            row.ent_lng.set_text(data['language'])
-                            # Restore metadata from cache if it exists there
-                            if "metadata" in data:
-                                row.stream_metadata = data["metadata"]
-                                row.update_meta_button_style()
-                        else:
-                            # Standard default for fresh files
-                            if stream.type in ['video', 'audio']:
-                                row.chk.set_active(True)
-                            
-                        self.lst_source_streams.append(row)
+            # --- Create Header Row (Filename and Duration) ---
+            header_hbox = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=12)
+            header_hbox.set_margin_top(6)
+            header_hbox.set_margin_end(24)
+            header_hbox.set_margin_bottom(3)
 
-                    if last_header:
-                        # We must wait for the layout to be calculated
-                        GLib.idle_add(self.do_scroll_to_row, last_header)
+            lbl_file = Gtk.Label(label=f"<big><b>{file_title}</b></big>",
+                                    use_markup=True, xalign=0, hexpand=True)
+            lbl_file.set_ellipsize(Pango.EllipsizeMode.END)
+            header_hbox.append(lbl_file)
 
-            except Exception as e:
-                # Handle corrupted files or unsupported formats gracefully in the UI
-                error_row = Gtk.ListBoxRow(selectable=False)
-                error_label = Gtk.Label(label=f"  Error opening {file_title}: {e}", xalign=0)
-                error_label.add_css_class("error") # Assuming you have an error style
-                error_row.set_child(error_label)
-                self.lst_source_streams.append(error_row)
+            lbl_dur = Gtk.Label(label=duration_str, xalign=1)
+            header_hbox.append(lbl_dur)
+
+            header_row = Gtk.ListBoxRow(selectable=False)
+            header_row.set_child(header_hbox)
+            self.lst_source_streams.append(header_row)
+
+            # --- Add individual streams ---
+            for stm_idx, stream in enumerate(media_info.get('streams', [])):
+                desc = self.get_stream_description(stream)
+                # ffprobe uses 'codec_type' instead of 'type'
+                stype = stream.get('codec_type', 'unknown')
+                existing_meta = dict(stream.get('metadata', {}))
+
+                row = SourceStreamRow(desc, stype, source_path, stm_idx, self, initial_metadata=existing_meta)
+
+                # Restore from cache
+                key = (source_path, stm_idx)
+                if key in self.selected_streams:
+                    data = self.selected_streams[key]
+                    row.chk.set_active(data["active"])
+                    row.ent_tpl.set_text(data["template"])
+                    row.ent_dsp.set_text(data["disposition"])
+                    row.ent_lng.set_text(data['language'])
+                    if "metadata" in data:
+                        row.stream_metadata = data["metadata"]
+                        row.update_meta_button_style()
+                else:
+                    if stype in ['video', 'audio']:
+                        row.chk.set_active(True)
+
+                self.lst_source_streams.append(row)
+
+            # except Exception as e:
+            #     error_row = Gtk.ListBoxRow(selectable=False)
+            #     error_label = Gtk.Label(label=f"  Error parsing {file_title}: {e}", xalign=0)
+            #     error_label.add_css_class("error")
+            #     error_row.set_child(error_label)
+            #     self.lst_source_streams.append(error_row)
 
     def do_scroll_to_row(self, row):
         """Manually scrolls the ScrolledWindow to the position of a specific row"""
