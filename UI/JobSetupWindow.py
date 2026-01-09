@@ -47,6 +47,23 @@ class JobSetupWindow(Gtk.ApplicationWindow):
                 font-weight: bold;
                 line-height: 100%;
             }
+                                    
+            .disposition-tag {
+                background-color: alpha(@theme_fg_color, 0.05);
+                border: 1px solid mix(@theme_fg_color, @theme_bg_color, 0.8);
+                border-radius: 6px;
+                padding: 8px 8px;
+            }
+            .disposition-tag label {
+                margin: 0 0 0 0;
+                font-weight: bold;
+                line-height: 100%;
+            }
+
+            flowboxchild {
+                padding: 0;
+                margin: 0;
+            }
         """, -1)
 
         # Apply the provider to the display
@@ -206,6 +223,12 @@ class JobSetupWindow(Gtk.ApplicationWindow):
         self.btn_global_meta.connect("clicked", self.on_manage_global_meta)
         self.btn_global_meta.set_has_frame(False)
         tag.append(self.btn_global_meta)
+
+        # VISUAL FEEDBACK: If metadata exists, highlight the button
+        if self.global_metadata:
+            self.btn_global_meta.add_css_class("suggested-action") # Or a custom CSS class
+            # Optional: Add a badge or change tooltip
+            self.btn_global_meta.set_tooltip_text(f"Container Metadata ({len(self.global_metadata)} tags)")
         
         self.container_box.append(tag)
 
@@ -299,78 +322,75 @@ class JobSetupWindow(Gtk.ApplicationWindow):
                     raise Exception(media_info["error"])
 
                 fmt = media_info.get('format', {})
-
-                # 1. Get Container Bitrate
-                # ffprobe returns bitrate in bits/sec as a string or int
+                # (Existing bitrate/duration logic...)
                 raw_bitrate = fmt.get('bit_rate')
-                container_br_str = ""
-                if raw_bitrate:
-                    kbps = int(raw_bitrate) // 1000
-                    container_br_str = f"{kbps} kbps"
-
-                # 2. Get Duration
-                duration_secs = float(fmt.get('duration', 0))
-                duration_str = format_duration(duration_secs)
+                container_br_str = f"{int(raw_bitrate) // 1000} kbps" if raw_bitrate else ""
+                duration_str = format_duration(float(fmt.get('duration', 0)))
 
                 # --- Create Header Row ---
                 header_hbox = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=12)
                 header_hbox.set_margin_top(6)
                 header_hbox.set_margin_end(24)
-                header_hbox.set_margin_bottom(3)
-
-                lbl_file = Gtk.Label(label=f"<big><b>{file_title}</b></big>",
-                                     use_markup=True, xalign=0, hexpand=True)
-                lbl_file.set_ellipsize(Pango.EllipsizeMode.END)
+                lbl_file = Gtk.Label(label=f"<big><b>{file_title}</b></big>", use_markup=True, xalign=0, hexpand=True)
                 header_hbox.append(lbl_file)
-
-                # Add Bitrate Label (New)
                 if container_br_str:
-                    lbl_br = Gtk.Label(label=container_br_str, xalign=1)
-                    lbl_br.add_css_class("caption") # Use a smaller/dimmer style if desired
-                    lbl_br.set_margin_end(6)
-                    header_hbox.append(lbl_br)
-
-                # Duration Label
-                lbl_dur = Gtk.Label(label=duration_str, xalign=1)
-                header_hbox.append(lbl_dur)
-
+                    header_hbox.append(Gtk.Label(label=container_br_str, xalign=1))
+                header_hbox.append(Gtk.Label(label=duration_str, xalign=1))
+                
                 header_row = Gtk.ListBoxRow(selectable=False)
                 header_row.set_child(header_hbox)
                 self.lst_source_streams.append(header_row)
 
-                GLib.idle_add(self.do_scroll_to_row, header_row)
-
                 # --- Add individual streams ---
                 for stm_idx, stream in enumerate(media_info.get('streams', [])):
                     desc = self.get_stream_description(stream)
-                    # ffprobe uses 'codec_type' instead of 'type'
                     stype = stream.get('codec_type', 'unknown')
-                    existing_meta = dict(stream.get('metadata', {}))
+                    
+                    # Extract raw stream tags from the file
+                    source_stream_tags = dict(stream.get('tags', {}))
 
-                    row = SourceStreamRow(desc, stype, source_path, stm_idx, self, initial_metadata=existing_meta)
-
-                    # Restore from cache
+                    # Check cache to see if user has already modified this stream
                     key = (source_path, stm_idx)
-                    if key in self.selected_streams:
-                        data = self.selected_streams[key]
-                        row.chk.set_active(data["active"])
-                        row.ent_tpl.set_text(data["template"])
-                        row.ent_dsp.set_text(data["disposition"])
-                        row.ent_lng.set_text(data['language'])
-                        if "metadata" in data:
-                            row.stream_metadata = data["metadata"]
-                            row.update_meta_button_style()
+                    cached_data = self.selected_streams.get(key)
+                    
+                    # Determine which metadata to use (Cached > Source)
+                    initial_meta = cached_data.get("metadata", source_stream_tags) if cached_data else source_stream_tags
+
+                    disposition_obj = stream.get('disposition', {})
+                    initial_disposition = self.parse_disposition_to_string(disposition_obj)
+
+                    # Pass this to the row (assuming SourceStreamRow is updated to handle/display it)
+                    row = SourceStreamRow(
+                        desc, 
+                        stype, 
+                        source_path, 
+                        stm_idx, 
+                        self, 
+                        initial_metadata=initial_meta,
+                        initial_disposition=initial_disposition
+                    )
+
+                    if cached_data:
+                        row.chk.set_active(cached_data["active"])
+                        row.ent_tpl.set_text(cached_data["template"])
+                        row.ent_dsp.set_text(cached_data["disposition"])
+                        row.ent_lng.set_text(cached_data['language'])
                     else:
+                        # New stream default: active if V or A
                         if stype in ['video', 'audio']:
                             row.chk.set_active(True)
+                        
+                        # Set default language from metadata if available
+                        lang = source_stream_tags.get('language') or source_stream_tags.get('LANGUAGE', '')
+                        row.ent_lng.set_text(lang)
 
+                    row.update_meta_button_style()
                     self.lst_source_streams.append(row)
 
             except Exception as e:
+                # (Existing error handling...)
                 error_row = Gtk.ListBoxRow(selectable=False)
-                error_label = Gtk.Label(label=f"  Error parsing {file_title}: {e}", xalign=0)
-                error_label.add_css_class("error")
-                error_row.set_child(error_label)
+                error_row.set_child(Gtk.Label(label=f"  Error parsing {file_title}: {e}", xalign=0))
                 self.lst_source_streams.append(error_row)
 
     def do_scroll_to_row(self, row):
@@ -409,11 +429,27 @@ class JobSetupWindow(Gtk.ApplicationWindow):
         self.lst_source_files.append(label)
 
         path_str = file.get_path()
+
         if self.entry_name.get_text() == "":
             self.entry_name.set_text(get_file_title(path_str))
             if self.entry_output_dir.get_text() == "":
                 import os
                 self.entry_output_dir.set_text(os.path.dirname(path_str))
+
+        # Metadata: Load if we don't have any global metadata yet
+        if not self.global_metadata:
+            try:
+                media_info = self.app.parsers['media'].get_info(path_str)
+                format_obj = media_info.get('format', {})
+                tags = format_obj.get('tags', {})
+
+                if tags:
+                    self.global_metadata = dict(tags)
+                    # Force a refresh of the container pill to show the active meta state
+                    self.update_container_ui()
+                    print(f"Container metadata loaded from: {path_str}")
+            except Exception as e:
+                print(f"Error retrieving container metadata: {e}")
 
     def on_file_drop(self, target, value, x, y):
         files = value.get_files()
@@ -523,3 +559,11 @@ class JobSetupWindow(Gtk.ApplicationWindow):
                 self.entry_output_dir.set_text(folder.get_path())
         except Exception as e:
             print(f"Folder selection cancelled: {e}")
+
+    def parse_disposition_to_string(self, disposition_dict):
+        """Converts {"default": 1, "dub": 0...} to 'default'"""
+        if not disposition_dict:
+            return ""
+        # Collect keys where value is 1
+        active_disps = [k for k, v in disposition_dict.items() if v == 1]
+        return ",".join(active_disps)

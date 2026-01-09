@@ -53,7 +53,7 @@ class TemplateEditorWindow(Gtk.ApplicationWindow):
             .codec-tag { background-color: alpha(@theme_fg_color, 0.05); border: 1px solid mix(@theme_fg_color, @theme_bg_color, 0.8); border-radius: 6px; padding: 2px; }
             .codec-tag label { margin-start: 8px; margin-end: 8px; font-weight: bold; }
             dropdown > button > box > stack > row.activatable { background-color: transparent; }
-            popover box { min-width: 180px; }
+            #template-editor-column popover box { min-width: 180px; }
         """, -1)
         Gtk.StyleContext.add_provider_for_display(Gdk.Display.get_default(), css_provider, Gtk.STYLE_PROVIDER_PRIORITY_USER)
 
@@ -123,6 +123,7 @@ class TemplateEditorWindow(Gtk.ApplicationWindow):
         scroll = Gtk.ScrolledWindow(vexpand=True)
         lst = Gtk.ListBox()
         lst.add_css_class("boxed-list")
+        lst.set_name("template-editor-column")
         lst.set_selection_mode(Gtk.SelectionMode.NONE)
 
         scroll.set_child(lst)
@@ -132,58 +133,83 @@ class TemplateEditorWindow(Gtk.ApplicationWindow):
 
     # --- WIDGET FACTORY ---
 
-    def create_value_widget(self, key, value, schema):
-        # 1. Handle dictionary-as-value (when schema is passed as 'value')
-        if isinstance(value, dict) and 'type' in value:
-            schema = value
-            value = schema.get("default", "")
+    def _parse_ffmpeg_num(self, val, fallback=0):
+        """Extracts the first numeric part of a string like '51, 0 means auto'."""
+        if isinstance(val, (int, float)):
+            return float(val)
+        if not val:
+            return float(fallback)
+        try:
+            # Take the first word and strip non-numeric characters
+            clean = str(val).split(',')[0].split(' ')[0]
+            return float(''.join(c for c in clean if c.isdigit() or c in '.-'))
+        except (ValueError, IndexError):
+            return float(fallback)
 
-        # 2. THE CRITICAL FIX: Robust Schema Lookup
+    def create_value_widget(self, key, value, schema=None):
         if not schema and key:
-            # We must search the full pool including common parameters
             pool = self.get_codec_params_list()
             schema = next((p for p in pool if p.get('name') == key), None)
 
-        # 3. Fallback if schema is still missing
         if not schema:
-            return Gtk.Entry(text=str(value or ""), hexpand=True)
+            return Gtk.Entry(text=str(value if value is not None else ""), hexpand=True)
 
-        # 4. Success: Use the found schema to build the rich widget
-        p_type = str(schema.get("type", "string")).lower()
+        # 1. PRIORITY: If there are options, it's a DropDown, regardless of 'type'
         options_list = schema.get("options", [])
-
-        # Dropdowns (Enums)
-        if options_list and isinstance(options_list, list):
-            tech_values = [str(o.get('name', '')) for o in options_list]
+        if options_list:
+            tech_values = [str(o.get('name')) for o in options_list]
             display_names = [f"{o.get('name')} ({o.get('descr')})" if o.get('descr') else str(o.get('name')) for o in options_list]
+            
             w = Gtk.DropDown(model=Gtk.StringList.new(display_names), hexpand=True)
             w._tech_values = tech_values
+            
+            # Determine initial selection
+            cur_val = str(value) if value is not None else str(schema.get("default", ""))
             try:
-                if value: w.set_selected(tech_values.index(str(value)))
-            except ValueError: pass
+                if cur_val in tech_values:
+                    w.set_selected(tech_values.index(cur_val))
+            except ValueError:
+                pass
             return w
 
-        # Numbers (The Spinner you are looking for)
+        # 2. NUMERIC: Logic for Spinners
+        p_type = str(schema.get("type", "string")).lower()
         if any(t in p_type for t in ["int", "integer", "float", "double"]):
-            is_float = "float" in p_type or "double" in p_type
-            try:
-                v_min = float(schema.get("min", -2147483648))
-                v_max = float(schema.get("max", 2147483647))
-                v_cur = float(value) if value not in [None, ""] else float(schema.get("default", 0))
-            except (ValueError, TypeError):
-                v_min, v_max, v_cur = 0, 100, 0
+            # Check if this is a floating point value
+            is_float = any(x in p_type for x in ["float", "double"])
+            
+            v_min = self._parse_ffmpeg_num(schema.get("min"), -2147483648)
+            v_max = self._parse_ffmpeg_num(schema.get("max"), 2147483647)
+            
+            # Value handling
+            if value is None or value == "":
+                v_cur = self._parse_ffmpeg_num(schema.get("default"), 0)
+            else:
+                v_cur = self._parse_ffmpeg_num(value, 0)
 
+            # Use 0.1 steps for floats, 1.0 for integers
+            # step = 0.1 if is_float else 1.0
+            step = 1
             adj = Gtk.Adjustment(value=v_cur, lower=v_min, upper=v_max,
-                                 step_increment=0.1 if is_float else 1.0)
+                                 step_increment=step, page_increment=step * 10)
+            
             w = Gtk.SpinButton(adjustment=adj, numeric=True)
-            if is_float: w.set_digits(2)
+            
+            if is_float:
+                # CRITICAL: This allows the 22.1 to actually be displayed
+                w.set_digits(1) 
+            else:
+                w.set_digits(0)
+
+            w.set_value(v_cur) 
             return w
 
-        # Booleans
+        # 3. BOOLEAN
         if p_type in ["bool", "boolean"]:
-            return Gtk.Switch(active=str(value).lower() in ['true', '1', 'on'], halign=Gtk.Align.START)
+            active = str(value).lower() in ['true', '1', 'on'] if value is not None else bool(schema.get("default"))
+            return Gtk.Switch(active=active, halign=Gtk.Align.START)
 
-        return Gtk.Entry(text=str(value), hexpand=True)
+        return Gtk.Entry(text=str(value if value is not None else ""), hexpand=True)
 
     # --- ROW MANAGEMENT ---
 

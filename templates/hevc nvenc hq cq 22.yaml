@@ -1,10 +1,11 @@
+name: hevc nvenc hq cq 22
 type: video
 codec: hevc_nvenc
 parameters:
     options:
-        cq: 0
+        cq: 22.200000000000003
+        2pass: true
         preset: p7
-        2pass: false
 filters:
     mode: simple
     entries: []

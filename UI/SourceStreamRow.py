@@ -6,16 +6,18 @@ from UI.DispositionPickerWindow import DispositionPickerWindow
 from UI.LanguagePickerWindow import LanguagePickerWindow
 
 class SourceStreamRow(Gtk.ListBoxRow):
-    def __init__(self, stream_descr, stream_type, source_path, stream_index, parent_window, initial_metadata):
+    def __init__(self, stream_descr, stream_type, source_path, stream_index, parent_window, initial_metadata, initial_disposition):
         super().__init__()
         self.source_path = source_path
         self.stream_type = stream_type
         self.stream_index = stream_index
         self.parent_window = parent_window
         self.stream_metadata = initial_metadata if initial_metadata is not None else {}
+        self.stream_disposition = initial_disposition if initial_disposition is not None else {}
 
         # Layout
         grid = Gtk.Grid(orientation=Gtk.Orientation.VERTICAL, row_spacing=6, column_spacing=6)
+        grid.set_hexpand(True)
         self.set_child(grid)
 
         # Left checkbox
@@ -55,9 +57,9 @@ class SourceStreamRow(Gtk.ListBoxRow):
         self.lbl_dsp = Gtk.Label(halign=Gtk.Align.END, label="Disposition:")
         grid.attach(self.lbl_dsp, 1, 2, 1, 1)
 
-        # Entry for disposition
-        self.ent_dsp = Gtk.Entry(hexpand=True, halign=Gtk.Align.FILL)
-        grid.attach(self.ent_dsp, 2, 2, 1, 1)
+        # disposition
+        self.dispositions = self.create_disposition_pills(self.stream_disposition)
+        grid.attach(self.dispositions, 2, 2, 1, 1)
 
         # Button for adding
         self.btn_add_dsp = Gtk.Button(icon_name="search-symbolic", halign=Gtk.Align.END)
@@ -79,17 +81,28 @@ class SourceStreamRow(Gtk.ListBoxRow):
         grid.attach(self.btn_srch_lng, 3, 3, 1, 1)
         self.btn_srch_lng.connect("clicked", self.on_search_lng_click)
 
+
+
     def on_add_dsp_click(self, button):
         # We pass a 'on_select' function to the picker
         self.pw = DispositionPickerWindow(
             self.parent_window,
-            self.ent_dsp.get_text(),
+            self.stream_disposition,
             on_select=self.apply_disposition # New callback
         )
         self.pw.present()
 
     def apply_disposition(self, selected_text):
-        self.ent_dsp.set_text(selected_text)
+        # REPLACE the string, don't use +=
+        # The Picker already handles the full list of tags
+        self.stream_disposition = selected_text
+        
+        # Clear the FlowBox
+        while child := self.dispositions.get_first_child():
+            self.dispositions.remove(child)
+            
+        # Rebuild with the fresh list
+        self.rebuild_pills(self.dispositions, self.stream_disposition)
 
     def on_search_lng_click(self, button):
         # We pass the callback exactly like we did for the Disposition picker
@@ -129,3 +142,37 @@ class SourceStreamRow(Gtk.ListBoxRow):
 
     def apply_template(self, template_name):
         self.ent_tpl.set_text(template_name)
+
+    def rebuild_pills(self, flowbox, disposition_str):
+        if not disposition_str:
+            return
+
+        # Use a list comprehension to get unique, non-empty tags
+        # We use list(dict.fromkeys(...)) to keep order while removing duplicates
+        raw_tags = [t.strip() for t in disposition_str.split(",") if t.strip()]
+        unique_tags = list(dict.fromkeys(raw_tags))
+
+        for disp in unique_tags:
+            lbl = Gtk.Label(label=disp)
+            #self.set_halign(Gtk.Align.START)
+            lbl.add_css_class("disposition-tag")
+            lbl.set_margin_start(0)
+            lbl.set_margin_end(0)
+            flowbox.append(lbl)
+
+    def create_disposition_pills(self, disposition_str):
+        """Initial creation of the container during row setup."""
+        self.dispositions = Gtk.FlowBox(
+            orientation=Gtk.Orientation.HORIZONTAL,
+            selection_mode=Gtk.SelectionMode.NONE,
+            column_spacing=0,   # This sets your 6px horizontal gap
+            row_spacing=0,      # This sets your 6px vertical gap
+            homogeneous=False,  # Allow tags to have different widths
+            halign=Gtk.Align.START
+        )
+        self.dispositions.set_margin_start(0)
+        self.dispositions.set_margin_end(0)
+        self.dispositions.set_margin_top(0)
+        self.dispositions.set_margin_bottom(0)
+        self.rebuild_pills(self.dispositions, disposition_str)
+        return self.dispositions

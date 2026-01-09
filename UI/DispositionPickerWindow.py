@@ -6,7 +6,7 @@ class DispositionTag(Gtk.Box):
     def __init__(self, text, on_remove_callback):
         # Set spacing to 0 and handle gaps with label margins
         super().__init__(orientation=Gtk.Orientation.HORIZONTAL, spacing=0)
-        self.add_css_class("disposition-tag") 
+        self.add_css_class("disposition-tag-pw") 
         self.text = text
         
         # CRITICAL: Prevent the tag from stretching to fill the row
@@ -44,18 +44,18 @@ class DispositionPickerWindow(Gtk.ApplicationWindow):
 
         css_provider = Gtk.CssProvider()
         css = """
-            .disposition-tag {
+            .disposition-tag-pw {
                 background-color: alpha(@theme_fg_color, 0.05);
                 border: 1px solid mix(@theme_fg_color, @theme_bg_color, 0.8);
                 border-radius: 6px;
                 padding: 2px;
             }
-            .disposition-tag label {
-                margin: 0 6px 0 0;
+            .disposition-tag-pw label {
+                margin: 0 0 0 0;
                 font-weight: bold;
                 line-height: 100%;
             }
-            .disposition-tag:hover {
+            .disposition-tag-pw:hover {
                 background-color: alpha(@theme_selected_bg_color, 0.2);
                 border-color: @theme_selected_bg_color;
             }
@@ -131,10 +131,7 @@ class DispositionPickerWindow(Gtk.ApplicationWindow):
             halign=Gtk.Align.START,
             valign=Gtk.Align.START
         )
-        self.tag_flowbox.set_margin_start(6)
-        self.tag_flowbox.set_margin_end(6)
         self.tag_flowbox.set_margin_top(6)
-        self.tag_flowbox.set_margin_bottom(6)
         
         tag_frame.set_child(self.tag_flowbox)
         main_box.append(tag_frame)
