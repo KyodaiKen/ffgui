@@ -165,8 +165,8 @@ class SourceStreamRow(Gtk.ListBoxRow):
         self.dispositions = Gtk.FlowBox(
             orientation=Gtk.Orientation.HORIZONTAL,
             selection_mode=Gtk.SelectionMode.NONE,
-            column_spacing=0,   # This sets your 6px horizontal gap
-            row_spacing=0,      # This sets your 6px vertical gap
+            column_spacing=6,   # This sets your 6px horizontal gap
+            row_spacing=6,      # This sets your 6px vertical gap
             homogeneous=False,  # Allow tags to have different widths
             halign=Gtk.Align.START
         )

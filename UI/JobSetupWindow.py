@@ -52,7 +52,7 @@ class JobSetupWindow(Gtk.ApplicationWindow):
                 background-color: alpha(@theme_fg_color, 0.05);
                 border: 1px solid mix(@theme_fg_color, @theme_bg_color, 0.8);
                 border-radius: 6px;
-                padding: 8px 8px;
+                padding: 6px 8px;
             }
             .disposition-tag label {
                 margin: 0 0 0 0;
