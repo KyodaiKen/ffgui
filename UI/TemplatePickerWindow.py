@@ -52,6 +52,11 @@ class TemplatePickerWindow(Gtk.ApplicationWindow):
         self.btn_new.connect("clicked", self.on_new_template_clicked)
         btn_box.append(self.btn_new)
 
+        self.btn_clone = Gtk.Button(label="CloneTemplate", hexpand=True)
+        self.btn_clone.add_css_class("text-button") # Subtle look
+        self.btn_clone.connect("clicked", self.on_clone_template_clicked)
+        btn_box.append(self.btn_clone)
+
         self.btn_select = Gtk.Button(label="Apply Template")
         self.btn_select.add_css_class("suggested-action")
         self.btn_select.connect("clicked", lambda _: self.on_ok_clicked())
@@ -159,6 +164,35 @@ class TemplatePickerWindow(Gtk.ApplicationWindow):
             template=new_template,
             on_save_callback=self.on_template_saved_and_pick,
             locked_type=self.target_type
+        )
+        editor.present()
+
+    def on_clone_template_clicked(self, btn):
+        # 1. Get the currently selected row
+        row = self.lst_templates.get_selected_row()
+        
+        if not row:
+            self.show_error_dialog("Please select a template to clone first.")
+            return
+
+        # 2. Find the corresponding template data from our list
+        # We use the path stored in the row as a unique identifier
+        selected_path = row._template_path
+        original_template = next((t for t in self.templates if t["path"] == selected_path), None)
+
+        if not original_template:
+            self.show_error_dialog("Could not find the source template data.")
+            return
+
+        # 3. Open the Editor Window in clone_mode
+        # We don't need to manually copy here because TemplateEditorWindow 
+        # calls copy.deepcopy(template) in its constructor.
+        editor = TemplateEditorWindow(
+            parent_window=self, 
+            template=original_template,
+            on_save_callback=self.on_template_saved_and_pick,
+            locked_type=self.target_type,
+            clone_mode=True
         )
         editor.present()
 

@@ -1,0 +1,10 @@
+name: av1 cpu 12MBit hq
+type: video
+codec: libsvtav1
+parameters:
+    options:
+        b: 12000
+        preset: 5
+filters:
+    mode: simple
+    entries: []

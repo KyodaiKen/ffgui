@@ -7,7 +7,7 @@ from pathlib import Path
 
 gi.require_version("Gdk", "4.0")
 gi.require_version("Gtk", "4.0")
-from gi.repository import GLib, Gtk
+from gi.repository import GLib, Gtk, Gdk
 
 from UI.MainWindow import MainWindow
 from Core.FFmpegParsers import (
@@ -31,6 +31,7 @@ class FFGuiApp(Gtk.Application):
 
         self.resolve_paths()
         self.setup_ffmpeg_execs()
+        self._load_global_css()
 
         # Initialize Parsers
         self.parsers = {
@@ -41,6 +42,90 @@ class FFGuiApp(Gtk.Application):
             "filters": FFmpegFilterParser(self.ffmpeg_full_exec_path, self.cache_dir / "filters.json"),
             "media": FFmpegMediaInfoParser(self.ffprobe_full_exec_path)
         }
+
+    def _load_global_css(self):
+        css_provider = Gtk.CssProvider()
+        
+        # Combine all your styles here
+        global_css = """
+            /* DispositionPickerWindow */
+            .disposition-tag-pw {
+                background-color: alpha(@theme_fg_color, 0.05);
+                border: 1px solid mix(@theme_fg_color, @theme_bg_color, 0.8);
+                border-radius: 6px;
+                padding: 2px;
+            }
+            .disposition-tag-pw label {
+                margin: 0 0 0 0;
+                font-weight: bold;
+                line-height: 100%;
+            }
+            .disposition-tag-pw:hover {
+                background-color: alpha(@theme_selected_bg_color, 0.2);
+                border-color: @theme_selected_bg_color;
+            }
+
+            /* JobSetupWindow */
+            /* Target the rows inside the streams list specifically */
+            #streams_list row:hover {
+                background-color: transparent;
+            }
+            /* Optional: ensure they don't look 'selected' either since mode is NONE */
+            #streams_list row:selected {
+                background-color: transparent;
+            }
+                                    
+            .container-tag {
+                background-color: alpha(@theme_fg_color, 0.05);
+                border: 1px solid mix(@theme_fg_color, @theme_bg_color, 0.8);
+                border-radius: 6px;
+                padding: 2px;
+            }
+            .container-tag label {
+                margin: 0 6px 0 0;
+                font-weight: bold;
+                line-height: 100%;
+            }
+                                    
+            .disposition-tag {
+                background-color: alpha(@theme_fg_color, 0.05);
+                border: 1px solid mix(@theme_fg_color, @theme_bg_color, 0.8);
+                border-radius: 6px;
+                padding: 6px 8px;
+            }
+            .disposition-tag label {
+                margin: 0 0 0 0;
+                font-weight: bold;
+                line-height: 100%;
+            }
+
+            flowboxchild {
+                padding: 0;
+                margin: 0;
+            }
+
+            /* TemplateEditorWindow */
+            .codec-tag { background-color: alpha(@theme_fg_color, 0.05); border: 1px solid mix(@theme_fg_color, @theme_bg_color, 0.8); border-radius: 6px; padding: 2px; }
+            .codec-tag label { margin-start: 8px; margin-end: 8px; font-weight: bold; }
+            dropdown > button > box > stack > row.activatable { background-color: transparent; }
+            #template-editor-column popover box { min-width: 180px; }
+            .warning-badge { 
+                color: @warning_color; 
+                border-radius: 4px; 
+                padding: 2px 8px;
+                font-size: 0.9em;
+                font-weight: bold;
+            }
+        """
+        
+        css_provider.load_from_data(global_css, -1)
+        
+        # Apply to the default display
+        Gtk.StyleContext.add_provider_for_display(
+            Gdk.Display.get_default(), 
+            css_provider, 
+            Gtk.STYLE_PROVIDER_PRIORITY_APPLICATION
+        )
 
     def resolve_paths(self):
         system = platform.system()

@@ -24,55 +24,6 @@ class JobSetupWindow(Gtk.ApplicationWindow):
         self.set_transient_for(parent_window)
         self.set_modal(True)
 
-        # Create a CSS Provider
-        css_provider = Gtk.CssProvider()
-        css_provider.load_from_data("""
-            /* Target the rows inside the streams list specifically */
-            #streams_list row:hover {
-                background-color: transparent;
-            }
-            /* Optional: ensure they don't look 'selected' either since mode is NONE */
-            #streams_list row:selected {
-                background-color: transparent;
-            }
-                                    
-            .container-tag {
-                background-color: alpha(@theme_fg_color, 0.05);
-                border: 1px solid mix(@theme_fg_color, @theme_bg_color, 0.8);
-                border-radius: 6px;
-                padding: 2px;
-            }
-            .container-tag label {
-                margin: 0 6px 0 0;
-                font-weight: bold;
-                line-height: 100%;
-            }
-                                    
-            .disposition-tag {
-                background-color: alpha(@theme_fg_color, 0.05);
-                border: 1px solid mix(@theme_fg_color, @theme_bg_color, 0.8);
-                border-radius: 6px;
-                padding: 6px 8px;
-            }
-            .disposition-tag label {
-                margin: 0 0 0 0;
-                font-weight: bold;
-                line-height: 100%;
-            }
-
-            flowboxchild {
-                padding: 0;
-                margin: 0;
-            }
-        """, -1)
-
-        # Apply the provider to the display
-        Gtk.StyleContext.add_provider_for_display(
-            Gdk.Display.get_default(),
-            css_provider,
-            Gtk.STYLE_PROVIDER_PRIORITY_APPLICATION
-        )
-
         # Main box of our window
         self.grid = Gtk.Grid(orientation=Gtk.Orientation.VERTICAL, vexpand=True, row_spacing=6, column_spacing=6)
         self.grid.props.margin_start = 6

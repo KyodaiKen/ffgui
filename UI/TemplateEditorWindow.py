@@ -9,30 +9,34 @@ import yaml
 from pathlib import Path
 
 class TemplateEditorWindow(Gtk.ApplicationWindow):
-    def __init__(self, parent_window, template, on_save_callback=None, locked_type=None, **kwargs):
+    def __init__(self, parent_window, template, on_save_callback=None, locked_type=None, clone_mode=False, **kwargs):
         super().__init__(**kwargs, title="Template Editor")
 
-        # 1. State Initialization
+        # State Initialization
         self.app = Gtk.Application.get_default()
         self.on_save_callback = on_save_callback
         self.locked_type = locked_type
         self.all_types = UICore.get_all_types()
         self.encoder_keys_group = Gtk.SizeGroup(mode=Gtk.SizeGroupMode.HORIZONTAL)
+        self.clone_mode = clone_mode
 
-        # 2. Template Setup
+        # Template Setup
         self.template = self._prepare_template_data(template)
         self.selected_codec = self.template['data']['codec']
 
-        # 3. Window Configuration
+        # Window Configuration
         self.set_default_size(1024, 700)
         self.set_transient_for(parent_window)
         self.set_modal(True)
 
-        # 4. Build UI
-        self._setup_css()
+        # Build UI
         self._build_ui()
 
-        # 5. Fill Data
+        # Handle clone mode
+        if self.clone_mode:
+            self._apply_clone_mode_setup()
+
+        # Fill Data
         self.load_structured_template(self.template)
         self.update_codec_ui()
 
@@ -46,16 +50,6 @@ class TemplateEditorWindow(Gtk.ApplicationWindow):
                 "parameters": {"options": {}}
             }
         }
-
-    def _setup_css(self):
-        css_provider = Gtk.CssProvider()
-        css_provider.load_from_data("""
-            .codec-tag { background-color: alpha(@theme_fg_color, 0.05); border: 1px solid mix(@theme_fg_color, @theme_bg_color, 0.8); border-radius: 6px; padding: 2px; }
-            .codec-tag label { margin-start: 8px; margin-end: 8px; font-weight: bold; }
-            dropdown > button > box > stack > row.activatable { background-color: transparent; }
-            #template-editor-column popover box { min-width: 180px; }
-        """, -1)
-        Gtk.StyleContext.add_provider_for_display(Gdk.Display.get_default(), css_provider, Gtk.STYLE_PROVIDER_PRIORITY_USER)
 
     def _build_ui(self):
         main_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=10)
@@ -71,6 +65,18 @@ class TemplateEditorWindow(Gtk.ApplicationWindow):
         main_box.append(grid)
 
         self.entry_name = Gtk.Entry(hexpand=True, placeholder_text="Template Name...")
+        
+        # Container for Name + Badge
+        name_vbox = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=4)
+        name_vbox.append(self.entry_name)
+        
+        # Placeholder for badge
+        self.badge_container = Gtk.Box()
+        name_vbox.append(self.badge_container)
+
+        grid.attach(Gtk.Label(label="Name:", halign=Gtk.Align.END), 0, 0, 1, 1)
+        grid.attach(name_vbox, 1, 0, 1, 1)
+
         self.combo_type = Gtk.DropDown.new_from_strings([t.capitalize() for t in self.all_types])
         self.combo_type.props.halign = Gtk.Align.START
         self.combo_type.connect("notify::selected", self.on_type_changed)
@@ -99,6 +105,22 @@ class TemplateEditorWindow(Gtk.ApplicationWindow):
         btn_save.set_halign(Gtk.Align.END)
         btn_save.connect("clicked", self.on_save_clicked)
         main_box.append(btn_save)
+
+    def _apply_clone_mode_setup(self):
+            """Logic specific to cloning a template."""
+            # Add the badge
+            badge = Gtk.Label(label="Clone Mode: Please rename this template")
+            badge.add_css_class("warning-badge")
+            badge.set_halign(Gtk.Align.START)
+            self.badge_container.append(badge)
+            
+            # Ensure name is editable in clone mode even if original was locked
+            if not self.clone_mode:
+                self.entry_name.set_editable(True)
+                self.entry_name.set_can_focus(True)
+            # Clear text or append suffix to prompt change
+            current_text = self.entry_name.get_text()
+            self.entry_name.set_text(f"{current_text}_copy")
 
     def _create_column(self, container, title, add_callback, is_filter=False):
         box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=6, hexpand=True)
@@ -338,7 +360,7 @@ class TemplateEditorWindow(Gtk.ApplicationWindow):
         self.entry_name.set_text(name)
 
         # Lock name if we are editing an existing system template or named file
-        if name:
+        if name and not self.clone_mode:
             self.entry_name.set_editable(False)
             self.entry_name.set_can_focus(False)
 
@@ -365,27 +387,49 @@ class TemplateEditorWindow(Gtk.ApplicationWindow):
         dialog.show(self)
 
     def on_save_clicked(self, _):
-        # 1. Get the name from the Entry widget
         name = self.entry_name.get_text().strip()
-
-        # 2. Validation
         if not name:
             self.show_error_dialog("Template name cannot be empty.")
             return
 
-        # 3. Reconstruct the template data from the UI rows
+        # Prepare path
+        base_dir = Path("./templates")
+        base_dir.mkdir(exist_ok=True)
+        save_path = base_dir / f"{name}.yaml"
+
+        # Check if file exists
+        if save_path.exists():
+            # In GTK4, AlertDialog is the preferred way for Yes/No
+            dialog = Gtk.AlertDialog(
+                message=f"Template '{name}' already exists.",
+                detail="Do you want to overwrite the existing file?",
+                buttons=["Cancel", "Overwrite"]
+            )
+            
+            # Use choose() for async handling to avoid blocking the main loop
+            dialog.choose(self, None, self._on_overwrite_confirmed, save_path)
+        else:
+            # New file, save directly
+            self._execute_save(save_path)
+
+    def _on_overwrite_confirmed(self, dialog, result, save_path):
+        """Callback for the Overwrite alert dialog."""
+        response = dialog.choose_finish(result)
+        if response == 1: # "Overwrite" button index
+            self._execute_save(save_path)
+
+    def _execute_save(self, save_path):
+        """The actual file writing logic."""
+        name = self.entry_name.get_text().strip()
         options = {}
         row = self.lst_encoder.get_first_child()
         while row:
-            # list_box rows in GTK4 can be separators or headers, so check for our attributes
             if hasattr(row, "_key_widget") and hasattr(row, "_val_widget"):
                 key = row._key_widget.get_label()
                 if key != "Select...":
                     options[key] = self.extract_widget_value(row._val_widget)
             row = row.get_next_sibling()
 
-        # 4. Build the YAML structure
-        # Note: We include 'name' at the top level of the file so it can be loaded back
         yaml_data = {
             "name": name,
             "type": self.get_selected_type(),
@@ -397,25 +441,12 @@ class TemplateEditorWindow(Gtk.ApplicationWindow):
             }
         }
 
-        # 5. Determine Save Path
-        # If we have an existing path, keep it. Otherwise, create a new one.
-        if self.template.get('path'):
-            save_path = Path(self.template['path'])
-        else:
-            base_dir = Path("./templates")
-            base_dir.mkdir(exist_ok=True)
-            save_path = base_dir / f"{name.replace(' ', '_')}.yaml"
-
-        # 6. Save
         try:
             with open(save_path, 'w') as f:
                 yaml.dump(yaml_data, f, sort_keys=False, indent=4)
-
             if self.on_save_callback:
                 self.on_save_callback(name)
-
             self.destroy()
-
         except Exception as e:
             self.show_error_dialog(f"Failed to save template: {str(e)}")
 

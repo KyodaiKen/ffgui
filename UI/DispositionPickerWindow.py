@@ -42,31 +42,6 @@ class DispositionPickerWindow(Gtk.ApplicationWindow):
         self.set_transient_for(parent_window)
         self.set_modal(True)
 
-        css_provider = Gtk.CssProvider()
-        css = """
-            .disposition-tag-pw {
-                background-color: alpha(@theme_fg_color, 0.05);
-                border: 1px solid mix(@theme_fg_color, @theme_bg_color, 0.8);
-                border-radius: 6px;
-                padding: 2px;
-            }
-            .disposition-tag-pw label {
-                margin: 0 0 0 0;
-                font-weight: bold;
-                line-height: 100%;
-            }
-            .disposition-tag-pw:hover {
-                background-color: alpha(@theme_selected_bg_color, 0.2);
-                border-color: @theme_selected_bg_color;
-            }
-            """
-        css_provider.load_from_data(css.encode())
-        Gtk.StyleContext.add_provider_for_display(
-            Gdk.Display.get_default(),
-            css_provider,
-            Gtk.STYLE_PROVIDER_PRIORITY_APPLICATION
-        )
-
         main_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=12)
         main_box.set_margin_start(12)
         main_box.set_margin_end(12)
