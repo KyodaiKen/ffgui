@@ -1,5 +1,5 @@
 name: flac best
-type: video
+type: audio
 codec: flac
 parameters:
     options:
