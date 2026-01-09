@@ -85,8 +85,36 @@ class FFmpegBaseParser(ABC):
     def _save_cache(self, version_str, data):
         os.makedirs(os.path.dirname(self.disk_cache_file) or '.', exist_ok=True)
         payload = {"ffmpeg_version": version_str, "data": data}
+        
+        # We use separators=(',', ':') to remove all whitespace/newlines
+        # We set allow_nan=False to force a ValueError, which we can then handle,
+        # OR more simply, we can preprocess the data to stringify NaNs.
+        
+        def json_fixer(obj):
+            import math
+            if isinstance(obj, float):
+                if math.isnan(obj):
+                    return "NaN"
+                if math.isinf(obj):
+                    return "Infinity" if obj > 0 else "-Infinity"
+            return obj
+
+        # Deep-clean the data for NaN values before dumping
+        def clean_nan(item):
+            import math
+            if isinstance(item, list):
+                return [clean_nan(i) for i in item]
+            elif isinstance(item, dict):
+                return {k: clean_nan(v) for k, v in item.items()}
+            elif isinstance(item, float) and math.isnan(item):
+                return "NaN"
+            return item
+
+        cleaned_payload = clean_nan(payload)
+
         with open(self.disk_cache_file, 'w', encoding='utf-8') as f:
-            json.dump(payload, f, indent=2)
+            # separators=(',', ':') ensures the most compact representation
+            json.dump(cleaned_payload, f, separators=(',', ':'))
 
     def _notify(self, message, callback, end='\n'):
         if callback:

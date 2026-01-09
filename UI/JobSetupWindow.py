@@ -292,7 +292,7 @@ class JobSetupWindow(Gtk.ApplicationWindow):
                 self.selected_streams[key] = {
                     "active": row.chk.get_active(),
                     "template": row.ent_tpl.get_text(),
-                    "disposition": row.ent_dsp.get_text(),
+                    "disposition": row.stream_disposition,
                     "language": row.ent_lng.get_text(),
                     "metadata": row.stream_metadata
                 }
@@ -341,6 +341,8 @@ class JobSetupWindow(Gtk.ApplicationWindow):
                 header_row.set_child(header_hbox)
                 self.lst_source_streams.append(header_row)
 
+                GLib.idle_add(self.do_scroll_to_row, header_row)
+
                 # --- Add individual streams ---
                 for stm_idx, stream in enumerate(media_info.get('streams', [])):
                     desc = self.get_stream_description(stream)
@@ -373,7 +375,7 @@ class JobSetupWindow(Gtk.ApplicationWindow):
                     if cached_data:
                         row.chk.set_active(cached_data["active"])
                         row.ent_tpl.set_text(cached_data["template"])
-                        row.ent_dsp.set_text(cached_data["disposition"])
+                        row.apply_disposition(cached_data["disposition"])
                         row.ent_lng.set_text(cached_data['language'])
                     else:
                         # New stream default: active if V or A
