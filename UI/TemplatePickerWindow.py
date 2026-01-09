@@ -2,9 +2,9 @@ import gi
 import pathlib
 gi.require_version("Gtk", "4.0")
 from gi.repository import Gtk, Gdk, Gio, Pango
-import yaml
 from UI.TemplateEditorWindow import TemplateEditorWindow
 from UI.Core import UICore
+from Models.TemplateDataModel import TemplateDataModel
 
 class TemplatePickerWindow(Gtk.ApplicationWindow):
     def __init__(self, parent_window, current_val, stream_type, on_select, **kwargs):
@@ -12,24 +12,27 @@ class TemplatePickerWindow(Gtk.ApplicationWindow):
         self.current_val = current_val
         self.target_type = stream_type
         self.on_select = on_select
+        self.app = Gtk.Application.get_default()
+
+        # Window Configuration
         self.set_default_size(600, 500)
         self.set_size_request(600, 300)
         self.set_transient_for(parent_window)
         self.set_modal(True)
 
-        # 1. Header with Search
+        # Header with Search
         hb = Gtk.HeaderBar()
         self.set_titlebar(hb)
         self.search_entry = Gtk.SearchEntry(placeholder_text="Search templates...")
-        self.search_entry.connect("search-changed", self.on_search_changed)
+        self.search_entry.connect("search-changed", lambda e: self.populate_list(e.get_text()))
         hb.set_title_widget(self.search_entry)
 
-        # 2. Main Layout
-        main_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=10)
-        main_box.props.margin_start = 12
-        main_box.props.margin_end = 12
-        main_box.props.margin_top = 12
-        main_box.props.margin_bottom = 12
+        # Main Layout
+        main_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=6)
+        main_box.props.margin_start = 6
+        main_box.props.margin_end = 6
+        main_box.props.margin_top = 6
+        main_box.props.margin_bottom = 6
         self.set_child(main_box)
 
         # List of Templates
@@ -38,6 +41,7 @@ class TemplatePickerWindow(Gtk.ApplicationWindow):
         self.lst_templates.add_css_class("boxed-list")
         self.lst_templates.set_activate_on_single_click(False)
         self.lst_templates.connect("row-activated", lambda *_: self.on_ok_clicked())
+        self.lst_templates.connect("selected-rows-changed", self.on_selection_changed)
         
         scroll = Gtk.ScrolledWindow(vexpand=True)
         scroll.set_child(self.lst_templates)
@@ -52,7 +56,7 @@ class TemplatePickerWindow(Gtk.ApplicationWindow):
         self.btn_new.connect("clicked", self.on_new_template_clicked)
         btn_box.append(self.btn_new)
 
-        self.btn_clone = Gtk.Button(label="CloneTemplate", hexpand=True)
+        self.btn_clone = Gtk.Button(label="Clone Template", hexpand=True)
         self.btn_clone.add_css_class("text-button") # Subtle look
         self.btn_clone.connect("clicked", self.on_clone_template_clicked)
         btn_box.append(self.btn_clone)
@@ -62,37 +66,19 @@ class TemplatePickerWindow(Gtk.ApplicationWindow):
         self.btn_select.connect("clicked", lambda _: self.on_ok_clicked())
         btn_box.append(self.btn_select)
 
-        # Load Data
-        self.templates = self.discover_templates()
-        self.populate_list()
+        self.btn_select.set_sensitive(False)
+        self.btn_clone.set_sensitive(False)
+
+        # Initial Load
+        self.templates = []
+        self.refresh_data()
         self.search_entry.grab_focus()
 
-    def discover_templates(self):
-        paths_to_scan = [
-            pathlib.Path("./templates"),
-            pathlib.Path.home() / ".config" / "ffgui" / "templates"
-        ]
-        
-        found_templates = []
-        for p in paths_to_scan:
-            if p.exists() and p.is_dir():
-                for file in p.glob("*.yaml"):
-                    try:
-                        with open(file, 'r') as f:
-                            data = yaml.safe_load(f)
-                            # Only include if the template type matches the stream type
-                            if data and data.get('type') == self.target_type:
-                                found_templates.append({
-                                    "name": file.stem,
-                                    "path": str(file.resolve()),
-                                    "type": data.get("type", "unknown").upper(),
-                                    "origin": "User" if ".config" in str(p) else "System",
-                                    "data": data
-                                })
-                    except Exception as e:
-                        print(f"Error reading {file}: {e}")
-                        
-        return sorted(found_templates, key=lambda x: (x['type'], x['name'].lower()))
+    def refresh_data(self):
+        """Fetches fresh data from the model and repopulates."""
+        # Pass self.app here to fix the TypeError
+        self.templates = TemplateDataModel.get_templates_by_type(self.app, self.target_type)
+        self.populate_list(self.search_entry.get_text())
 
     def populate_list(self, filter_text=""):
         while child := self.lst_templates.get_first_child():
@@ -101,64 +87,69 @@ class TemplatePickerWindow(Gtk.ApplicationWindow):
         filter_text = filter_text.lower()
         for t in self.templates:
             if filter_text in t["name"].lower():
-                row_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
+                self.lst_templates.append(self._create_row(t))
 
-                # Type Badge
-                lbl_type = Gtk.Label(label=t["type"])
-                lbl_type.add_css_class("caption")
-                lbl_type.set_width_chars(12)
-                row_box.append(lbl_type)
+    def _create_row(self, t):
+        row_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
+        row_box.set_margin_top(4)
+        row_box.set_margin_bottom(4)
 
-                t_type = t.get("type", "unknown").lower()
-                icon_name = UICore.get_icon_for_type(t_type)
-                img_type = Gtk.Image.new_from_icon_name(icon_name)
-                img_type.set_tooltip_text(f"Type: {t_type.capitalize()}")
-                row_box.append(img_type)
+        # 1. Type Badge
+        lbl_type = Gtk.Label(label=t["type"])
+        lbl_type.add_css_class("caption")
+        lbl_type.set_width_chars(12)
+        row_box.append(lbl_type)
 
-                lbl_name = Gtk.Label(label=f"<b>{t["name"]}</b>", xalign=0, hexpand=True, use_markup=True)
-                lbl_name.set_ellipsize(Pango.EllipsizeMode.MIDDLE)
-                row_box.append(lbl_name)
+        # 2. Icon
+        t_type = t.get("type", "unknown").lower()
+        icon_name = UICore.get_icon_for_type(t_type)
+        img_type = Gtk.Image.new_from_icon_name(icon_name)
+        img_type.set_tooltip_text(f"Type: {t_type.capitalize()}")
+        row_box.append(img_type)
 
-                lbl_origin = Gtk.Label(label=t["origin"], xalign=1)
-                lbl_origin.add_css_class("dim-label")
-                row_box.append(lbl_origin)
-
-                btn_edit = Gtk.Button(icon_name="document-edit-symbolic")
-                btn_edit.set_tooltip_text("Edit Template")
-                btn_edit.set_margin_end(24)
-                btn_edit.connect("clicked", self.on_edit_template_clicked, t)
-                row_box.append(btn_edit)
-
-                list_row = Gtk.ListBoxRow()
-                list_row.set_child(row_box)
-                list_row._template_path = t["path"]
-                list_row._template_name = t["name"]
-
-                gesture = Gtk.GestureClick.new()
-                gesture.set_button(Gdk.BUTTON_SECONDARY) # Right click
-                gesture.connect("pressed", self.on_row_right_clicked, list_row)
-                list_row.add_controller(gesture)
-
-                self.lst_templates.append(list_row)
-
-    def on_search_changed(self, entry):
-        self.populate_list(entry.get_text())
-
-    def on_new_template_clicked(self, btn):
-        # 1. Create a blank template structure
-        new_template = {
-            "name": "",
-            "path": "",
-            "origin": "User", # New templates are usually user-created
-            "data": {
-                "type": "video",
-                "codec": "libx264",
-                "parameters": {"options": {}}
-            }
-        }
+        # 3. Name + Read-only icon
+        name_box = Gtk.Box(spacing=6, hexpand=True)
+        lbl_name = Gtk.Label(label=f"<b>{t['name']}</b>", use_markup=True, xalign=0)
+        name_box.append(lbl_name)
         
-        # 2. Open the Editor Window
-        # We pass self.on_template_saved_and_pick as a custom callback
+        if t.get("readonly"):
+            img_lock = Gtk.Image.new_from_icon_name("changes-prevent-symbolic")
+            img_lock.set_tooltip_text("System Template (Read-Only)")
+            name_box.append(img_lock)
+        
+        row_box.append(name_box)
+
+        # 4. Origin
+        lbl_origin = Gtk.Label(label=t["origin"])
+        lbl_origin.add_css_class("dim-label")
+        row_box.append(lbl_origin)
+
+        # 5. Action Buttons (Edit)
+        btn_edit = Gtk.Button(icon_name="document-edit-symbolic")
+        # In Picker, we usually allow editing user templates but disable for System
+        if t.get("readonly"):
+            btn_edit.set_sensitive(False)
+            btn_edit.set_tooltip_text("System templates cannot be edited directly")
+        else:
+            btn_edit.connect("clicked", lambda *_: self.on_edit_template(t))
+        btn_edit.props.margin_end = 24
+        row_box.append(btn_edit)
+
+        # --- CRITICAL DATA TAGS ---
+        list_row = Gtk.ListBoxRow(child=row_box)
+        list_row._template_name = t['name']
+        list_row._template_path = t['path']
+        
+        return list_row
+
+    # New handler:
+    def on_selection_changed(self, _):
+        has_selection = self.lst_templates.get_selected_row() is not None
+        self.btn_select.set_sensitive(has_selection)
+        self.btn_clone.set_sensitive(has_selection)
+
+    def on_new_template_clicked(self, _):
+        new_template = TemplateDataModel.create_empty_template(self.target_type)
         editor = TemplateEditorWindow(
             parent_window=self, 
             template=new_template,
@@ -167,41 +158,35 @@ class TemplatePickerWindow(Gtk.ApplicationWindow):
         )
         editor.present()
 
-    def on_clone_template_clicked(self, btn):
-        # 1. Get the currently selected row
+    def on_clone_template_clicked(self, _):
         row = self.lst_templates.get_selected_row()
         
+        # 1. If no row is selected, show an alert and exit
         if not row:
-            self.show_error_dialog("Please select a template to clone first.")
+            alert = Gtk.AlertDialog(
+                message="No template selected",
+                detail="Please select a template from the list to clone it."
+            )
+            alert.show(self)
             return
 
-        # 2. Find the corresponding template data from our list
-        # We use the path stored in the row as a unique identifier
-        selected_path = row._template_path
-        original_template = next((t for t in self.templates if t["path"] == selected_path), None)
+        # 2. Find the template data matching the row's tagged path
+        selected = next((t for t in self.templates if t["path"] == row._template_path), None)
 
-        if not original_template:
-            self.show_error_dialog("Could not find the source template data.")
-            return
-
-        # 3. Open the Editor Window in clone_mode
-        # We don't need to manually copy here because TemplateEditorWindow 
-        # calls copy.deepcopy(template) in its constructor.
-        editor = TemplateEditorWindow(
-            parent_window=self, 
-            template=original_template,
-            on_save_callback=self.on_template_saved_and_pick,
-            locked_type=self.target_type,
-            clone_mode=True
-        )
-        editor.present()
+        if selected:
+            # We pass clone_mode=True so the Editor handles naming (e.g., adding '_copy')
+            editor = TemplateEditorWindow(
+                parent_window=self, 
+                template=selected, 
+                on_save_callback=self.on_template_saved_and_pick,
+                clone_mode=True
+            )
+            editor.present()
 
     def on_template_saved_and_pick(self, template_name):
-        self.templates = self.discover_templates()
-        self.populate_list()
+        self.refresh_data()
         
-        # Automatically select the new template
-        # We search through our ListBox for the row matching the new name
+        # Auto-select the newly created template
         row = self.lst_templates.get_first_child()
         while row:
             if hasattr(row, "_template_name") and row._template_name == template_name:
@@ -215,6 +200,15 @@ class TemplatePickerWindow(Gtk.ApplicationWindow):
         if row:
             self.on_select(row._template_name)
             self.destroy()
+
+    def on_edit_template(self, template):
+        win = TemplateEditorWindow(
+            parent_window=self, 
+            template=template,
+            on_save_callback=lambda _: self.refresh_data(),
+            locked_type=self.target_type
+        )
+        win.present()
 
     def on_row_right_clicked(self, gesture, n_press, x, y, row):
         # Select the row being right-clicked
@@ -267,17 +261,6 @@ class TemplatePickerWindow(Gtk.ApplicationWindow):
             Gio.AppInfo.launch_default_for_uri(uri, None)
         except Exception as e:
             print(f"Launch failed: {e}")
-
-    def on_edit_template_clicked(self, button, template):
-        """Opens the TemplateSetupWindow for the selected template"""
-        print(f"Opening TemplateSetupWindow for: {template['name']}")
-        win = TemplateEditorWindow(
-            parent_window=self, 
-            template=template,
-            on_save_callback=self.on_template_saved_and_pick,
-            locked_type=self.target_type
-        )
-        win.present()
 
     def show_error_dialog(self, message):
         """Simple feedback for missing files"""

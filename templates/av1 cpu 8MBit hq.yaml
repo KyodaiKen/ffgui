@@ -1,9 +1,8 @@
-name: av1 cpu 8MBit hq
 type: video
 codec: libsvtav1
 parameters:
     options:
-        b: 10000
+        b: 8000000
         preset: 5
 filters:
     mode: simple

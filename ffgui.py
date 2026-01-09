@@ -28,7 +28,7 @@ class FFGuiApp(Gtk.Application):
         self.ffmpeg_data = {}
         self.progress_win = None
         self.introspection_cancelled = False
-
+    
         self.resolve_paths()
         self.setup_ffmpeg_execs()
         self._load_global_css()

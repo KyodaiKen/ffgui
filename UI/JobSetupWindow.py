@@ -4,24 +4,51 @@ from gi.repository import GLib, Gtk, Gio, Gdk, Pango
 from UI.SourceStreamRow import SourceStreamRow
 from UI.ContainerPickerWindow import ContainerPickerWindow
 from UI.MetadataManagerWindow import MetadataManagerWindow
+from Models.JobsDataModel import JobsDataModel
 from Core.Utils import format_duration, get_file_title
 import av
 
 class JobSetupWindow(Gtk.ApplicationWindow):
-    def __init__(self, parent_window, job, **kwargs):
+    def __init__(self, parent_window, mode="create", job=None, **kwargs):
         super().__init__(**kwargs, title="Job Setup")
-        self.app = self.get_application()
-        self.job = job
-        self.source_paths = []
-        # Structure: {(file_path, stream_index): {"template": "...", "disposition": "...", "active": True}}
-        self.selected_streams = {}
-        self.global_metadata = {}
+        self.is_loading = True
+
+        # 1. Explicitly grab the application instance
+        self.app = Gtk.Application.get_default()
+        self.on_job_setup_finished = None
+        
+        # 2. Safety check: Ensure the media parser exists
+        if not hasattr(self.app, 'parsers'):
+             print("Warning: Media parsers not found on the application instance.")
+        self.mode = mode
         self.parent_window = parent_window
 
+        # 1. Initialize data structure from Model
+        if mode in ["edit", "clone"] and job:
+            self.job_data = job
+            if mode == "clone":
+                self.job_data["name"] += " (Copy)"
+        else:
+            self.job_data = JobsDataModel.create_empty_job()
+
+        self.source_paths = []
+        self.selected_streams = {}
+        self.global_metadata = {}
+
+        self.setup_ui()
+        
+        # 2. Populate UI if we are editing/cloning
+        if mode in ["edit", "clone"]:
+            self.load_job_into_ui()
+            if mode == "clone":
+                self.show_clone_warning()
+
+    def setup_ui(self):
+        """Standard UI Setup (Grid, Lists, Buttons)"""
         # Set window size
         self.set_size_request(640, 480)
         self.set_default_size(1024, 700)
-        self.set_transient_for(parent_window)
+        self.set_transient_for(self.parent_window)
         self.set_modal(True)
 
         # Main box of our window
@@ -36,6 +63,7 @@ class JobSetupWindow(Gtk.ApplicationWindow):
         self.lbl_name = Gtk.Label(halign=Gtk.Align.END, valign=Gtk.Align.FILL)
         self.lbl_name.set_text("Name: ")
         self.entry_name = Gtk.Entry(hexpand = True)
+        self.entry_name.set_text(self.job_data.get("name", ""))
         self.grid.attach(self.lbl_name, 0, 0, 1, 1)
         self.grid.attach(self.entry_name, 1, 0, 2, 1)
 
@@ -123,14 +151,17 @@ class JobSetupWindow(Gtk.ApplicationWindow):
         # 1. Container selection (the Pill)
         self.container_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=0)
         self.output_subgrid.attach(self.container_box, 0, 1, 1, 1)
+        self.selected_container = self.job_data["output"].get("container", "mkv")
 
         # 2. Filename Override
         self.entry_output_filename = Gtk.Entry(hexpand=True)
+        self.entry_output_filename.set_text(self.job_data["output"].get("filename", ""))
         self.output_subgrid.attach(self.entry_output_filename, 1, 1, 1, 1)
 
         # 3. Output Directory Picker
         self.output_dir_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=4)
         self.entry_output_dir = Gtk.Entry(hexpand=True)
+        self.entry_output_dir.set_text(self.job_data["output"].get("directory", ""))
         btn_dir = Gtk.Button(icon_name="folder-open-symbolic")
         btn_dir.connect("clicked", self.on_select_output_dir_clicked)
         
@@ -144,12 +175,126 @@ class JobSetupWindow(Gtk.ApplicationWindow):
 
         self.btn_ok = Gtk.Button(label="OK")
         self.btn_ok.add_css_class("suggested-action")
+        self.btn_ok.connect("clicked", self.on_save_job_clicked)
         self.grid.attach(self.btn_ok, 2, 5, 1, 1)
 
         # Drag and Drop Logic
         drop_target = Gtk.DropTarget.new(Gdk.FileList, Gdk.DragAction.COPY)
         drop_target.connect("drop", self.on_file_drop)
         self.lst_source_files.add_controller(drop_target)
+
+    def load_job_into_ui(self):
+        """Maps JobDataModel YAML structure back into UI widgets"""
+        self.is_loading = True # Block all automatic syncs
+        
+        out = self.job_data.get("output", {})
+        self.entry_output_dir.set_text(out.get("directory", ""))
+        self.entry_output_filename.set_text(out.get("filename", ""))
+        self.selected_container = out.get("container", "mkv")
+
+        files = self.job_data.get("sources", {}).get("files", [])
+        streams = self.job_data.get("sources", {}).get("streams", [])
+        
+        # Clear existing state
+        self.source_paths = files.copy()
+        self.selected_streams = {}
+
+        # 1. Fill Cache directly from YAML
+        for s in streams:
+            try:
+                f_idx = s.get('file')
+                if f_idx is not None and 0 <= f_idx < len(self.source_paths):
+                    path = self.source_paths[f_idx]
+                    # Use the index from YAML, fall back to list order if missing
+                    idx = s.get('index', 0) 
+                    
+                    self.selected_streams[(path, idx)] = {
+                        "active": s.get("active", True),
+                        "template": s.get("template", ""),
+                        "disposition": s.get("disposition", []),
+                        "language": s.get("language", ""),
+                        "metadata": s.get("metadata", {}) 
+                    }
+            except Exception as e:
+                print(f"Error mapping stream: {e}")
+
+        # 2. Rebuild the Top File List UI without triggering sync_data_model
+        self.lst_source_files.remove_all()
+        for f_path in self.source_paths:
+            lbl = Gtk.Label(label=f_path, tooltip_text=f_path)
+            lbl.set_xalign(0.0)
+            lbl.set_ellipsize(Pango.EllipsizeMode.MIDDLE)
+            self.lst_source_files.append(lbl)
+
+        # 3. Now that data is ready, trigger ONE refresh
+        self.is_loading = False 
+        self.get_sources() 
+        self.update_container_ui()
+
+    def show_clone_warning(self):
+        """Warns the user they are working on a duplicate"""
+        toast = Gtk.Label(label="Cloning Job: Please ensure you change the output filename.")
+        toast.add_css_class("warning")
+        self.grid.attach(toast, 1, 6, 2, 1)
+
+    def on_save_job_clicked(self, _):
+        """Gathers UI data into JobDataModel format and saves"""
+        # 1. FORCE SYNC: This populates self.source_paths from the ListBox
+        self.sync_data_model() 
+        
+        # 2. SAVE STREAM STATE: This populates self.selected_streams from the rows
+        self.save_stream_state()
+        
+        # Now proceed with building the dict
+        final_data = JobsDataModel.create_empty_job()
+        final_data["name"] = self.entry_name.get_text()
+        final_data["output"]["directory"] = self.entry_output_dir.get_text()
+        final_data["output"]["filename"] = self.entry_output_filename.get_text()
+        final_data["output"]["container"] = self.selected_container
+        
+        # Use the freshly synced paths
+        final_data["sources"]["files"] = self.source_paths
+        
+        # Streams
+        for (path, idx), settings in self.selected_streams.items():
+            try:
+                # If sync_data_model worked, the path MUST be in source_paths
+                file_idx = self.source_paths.index(path)
+
+                disp = settings.get("disposition", [])
+                # If it's a string from the UI, split it. If it's already a list, use it.
+                if isinstance(disp, str):
+                    disposition_list = [d.strip() for d in disp.split(",") if d.strip()]
+                else:
+                    disposition_list = disp
+
+                final_data["sources"]["streams"].append({
+                    "file": file_idx,
+                    "index": idx,
+                    "active": settings.get("active", False),
+                    "template": settings.get("template", ""),
+                    "disposition": disposition_list,
+                    "language": settings.get("language", "")
+                })
+            except ValueError:
+                print(f"Warning: Path {path} not found in source_paths during save.")
+                continue
+
+        # Validate
+        valid, errs = JobsDataModel.validate_job_data(self.app, final_data)
+        if not valid:
+            self.show_error_dialog("\n".join(errs))
+            return
+
+        # Return to parent window (logic for file selection handled by caller)
+        if self.on_job_setup_finished:
+            self.on_job_setup_finished(final_data)
+
+        self.destroy()
+
+    def show_error_dialog(self, msg):
+        dialog = Gtk.AlertDialog(message="Validation Error", detail=msg)
+        dialog.show(self)
 
     def update_container_ui(self):
         """Refreshes the 'pill' display for the container"""
@@ -235,6 +380,11 @@ class JobSetupWindow(Gtk.ApplicationWindow):
     def save_stream_state(self):
         """Saves current widget values into the cache using row identity"""
         row = self.lst_source_streams.get_first_child()
+        # If there are no rows (like during initial load), do nothing!
+        if not row:
+            return
+        
+        row = self.lst_source_streams.get_first_child()
         while row:
             if isinstance(row, SourceStreamRow):
                 # Use the path stored directly in the row
@@ -261,7 +411,9 @@ class JobSetupWindow(Gtk.ApplicationWindow):
         return None
     
     def get_sources(self):
-        self.save_stream_state()
+        if not (hasattr(self, 'is_loading') and self.is_loading):
+             self.save_stream_state()
+
         self.lst_source_streams.remove_all()
 
         for source_path in self.source_paths:
@@ -326,7 +478,13 @@ class JobSetupWindow(Gtk.ApplicationWindow):
                     if cached_data:
                         row.chk.set_active(cached_data["active"])
                         row.ent_tpl.set_text(cached_data["template"])
-                        row.apply_disposition(cached_data["disposition"])
+
+                        # Ensure disposition is a string for the UI row
+                        disp = cached_data.get("disposition", "")
+                        if isinstance(disp, list):
+                            row.apply_disposition(",".join(disp))
+                        else:
+                            row.apply_disposition(disp)
                         row.ent_lng.set_text(cached_data['language'])
                     else:
                         # New stream default: active if V or A
@@ -362,6 +520,9 @@ class JobSetupWindow(Gtk.ApplicationWindow):
 
     def sync_data_model(self):
         """Rebuild the list based on the current UI order"""
+        if hasattr(self, 'is_loading') and self.is_loading:
+            return
+        
         self.source_paths = []
         row = self.lst_source_files.get_first_child()
         while row:

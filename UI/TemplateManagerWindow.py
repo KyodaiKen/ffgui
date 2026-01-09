@@ -1,11 +1,10 @@
 import gi
-import pathlib
-import yaml
 import os
 gi.require_version("Gtk", "4.0")
 from gi.repository import Gtk, Gdk, Gio, Pango
 from UI.TemplateEditorWindow import TemplateEditorWindow
 from UI.Core import UICore
+from Models.TemplateDataModel import TemplateDataModel
 
 class TemplateManagerWindow(Gtk.ApplicationWindow):
     def __init__(self, parent_window, **kwargs):
@@ -15,11 +14,12 @@ class TemplateManagerWindow(Gtk.ApplicationWindow):
         self.set_transient_for(parent_window)
         self.set_modal(True)
 
+        # --- UI Setup ---
         # HeaderBar with Search
         hb = Gtk.HeaderBar()
         self.set_titlebar(hb)
         self.search_entry = Gtk.SearchEntry(placeholder_text="Filter templates...")
-        self.search_entry.connect("search-changed", self.on_search_changed)
+        self.search_entry.connect("search-changed", lambda e: self.populate_ui(e.get_text()))
         hb.set_title_widget(self.search_entry)
 
         # Main Layout
@@ -47,121 +47,116 @@ class TemplateManagerWindow(Gtk.ApplicationWindow):
         
         main_box.append(action_box)
 
-        self.refresh_list()
-
-    def discover_templates(self):
-        paths = [pathlib.Path("./templates"), pathlib.Path.home() / ".config" / "ffgui" / "templates"]
-        found = []
-        for p in paths:
-            if p.exists() and p.is_dir():
-                for file in p.glob("*.yaml"):
-                    try:
-                        with open(file, 'r') as f:
-                            data = yaml.safe_load(f)
-                            found.append({
-                                "name": file.stem,
-                                "path": str(file.resolve()),
-                                "type": data.get("type", "unknown").upper(),
-                                "origin": "User" if ".config" in str(p) else "System",
-                                "data": data
-                            })
-                    except: continue
-        return sorted(found, key=lambda x: (x['type'], x['name'].lower()))
+        self.populate_ui()
 
     def populate_ui(self, filter_text=""):
         while child := self.lst_templates.get_first_child():
             self.lst_templates.remove(child)
         
-        templates = self.discover_templates()
+        # Pass self.app (the Gtk.Application instance)
+        templates = TemplateDataModel.get_all_templates(Gtk.Application.get_default())
+        
         for t in templates:
-            if filter_text.lower() in t["name"].lower():
-                row_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
+            if not filter_text or filter_text.lower() in t["name"].lower():
+                self.lst_templates.append(self._create_row(t))
 
-                # Type Badge
-                lbl_type = Gtk.Label(label=t["type"])
-                lbl_type.add_css_class("caption")
-                lbl_type.set_width_chars(12)
-                row_box.append(lbl_type)
+    def _create_row(self, t):
+        row_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
+        row_box.set_margin_top(4)     # Add a tiny bit of breathing room
+        row_box.set_margin_bottom(4)
+        # Type Badge
+        lbl_type = Gtk.Label(label=t["type"])
+        lbl_type.add_css_class("caption")
+        lbl_type.set_width_chars(12)
+        row_box.append(lbl_type)
 
-                t_type = t.get("type", "unknown").lower()
-                icon_name = UICore.get_icon_for_type(t_type)
-                img_type = Gtk.Image.new_from_icon_name(icon_name)
-                img_type.set_tooltip_text(f"Type: {t_type.capitalize()}")
-                row_box.append(img_type)
+        t_type = t.get("type", "unknown").lower()
+        icon_name = UICore.get_icon_for_type(t_type)
+        img_type = Gtk.Image.new_from_icon_name(icon_name)
+        img_type.set_tooltip_text(f"Type: {t_type.capitalize()}")
+        row_box.append(img_type)
 
-                # Name
-                lbl_name = Gtk.Label(label=f"<b>{t['name']}</b>", use_markup=True, xalign=0, hexpand=True)
-                row_box.append(lbl_name)
+        # Name + Read-only icon if applicable
+        name_box = Gtk.Box(spacing=6, hexpand=True)
+        lbl_name = Gtk.Label(label=f"<b>{t['name']}</b>", use_markup=True, xalign=0)
+        name_box.append(lbl_name)
+        
+        if t.get("readonly"):
+            img_lock = Gtk.Image.new_from_icon_name("changes-prevent-symbolic")
+            img_lock.set_tooltip_text("System Template (Read-Only)")
+            name_box.append(img_lock)
+        
+        row_box.append(name_box)
 
-                # Origin
-                lbl_origin = Gtk.Label(label=t["origin"])
-                lbl_origin.add_css_class("dim-label")
-                row_box.append(lbl_origin)
+        # Origin
+        lbl_origin = Gtk.Label(label=t["origin"])
+        lbl_origin.add_css_class("dim-label")
+        row_box.append(lbl_origin)
 
-                # Action Buttons
-                btn_edit = Gtk.Button(icon_name="document-edit-symbolic")
-                btn_edit.connect("clicked", self.on_edit_clicked, t)
-                row_box.append(btn_edit)
+        # Action Buttons
+        btn_edit = Gtk.Button(icon_name="document-edit-symbolic")
+        btn_edit.connect("clicked", lambda *_: self.on_edit_clicked(t))
+        row_box.append(btn_edit)
 
-                btn_rename = Gtk.Button(icon_name="insert-text-symbolic")
-                btn_rename.connect("clicked", self.on_rename_clicked, t)
-                btn_rename.props.margin_end = 24
-                row_box.append(btn_rename)
+        btn_rename = Gtk.Button(icon_name="insert-text-symbolic")
+        # Disable rename button if the file is read-only
+        btn_rename.set_sensitive(not t.get("readonly")) 
+        btn_rename.connect("clicked", lambda *_: self.on_rename_clicked(t))
+        btn_rename.props.margin_end = 24
+        row_box.append(btn_rename)
 
-                list_row = Gtk.ListBoxRow()
-                list_row.set_child(row_box)
-                self.lst_templates.append(list_row)
-
-    def on_search_changed(self, entry):
-        self.populate_ui(entry.get_text())
-
-    def refresh_list(self):
-        self.populate_ui(self.search_entry.get_text())
+        return Gtk.ListBoxRow(child=row_box)
 
     def on_new_template(self, _):
-        # We can prompt for type first or default to Video in Editor
-        win = TemplateEditorWindow(self, template=None, on_save_callback=lambda _: self.refresh_list())
+        # Use Model to generate the blank starting data
+        new_data = TemplateDataModel.create_empty_template()
+        win = TemplateEditorWindow(self, template=new_data, on_save_callback=lambda _: self.populate_ui())
         win.present()
 
-    def on_edit_clicked(self, _, template):
-        win = TemplateEditorWindow(self, template=template, on_save_callback=lambda _: self.refresh_list())
-        win.present()
-
-    def on_rename_clicked(self, _, template):
-        # Create a simple Entry dialog (GTK4 style)
-        self.rename_dialog = Gtk.FileDialog(title=f"Rename {template['name']}")
+    def on_edit_clicked(self, template):
+        # If it's read-only, we treat it like a "Clone" so the user
+        # saves a new version in their User directory instead of failing to save.
+        is_readonly = template.get("readonly", False)
         
-        # Note: Since GTK4 FileDialog is for picking, we use a simple Gtk.Window 
-        # as an 'input prompt' or Gtk.Entry inside an AlertDialog.
-        # For brevity, let's use an Entry row logic:
-        msg = Gtk.Label(label=f"New name for '{template['name']}':")
-        entry = Gtk.Entry(text=template['name'])
-        
-        content = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=10)
-        content.append(msg)
-        content.append(entry)
-
-        alert = Gtk.MessageDialog(
-            transient_for=self,
-            modal=True,
-            message_type=Gtk.MessageType.QUESTION,
-            buttons=Gtk.ButtonsType.OK_CANCEL,
-            text="Rename Template"
+        win = TemplateEditorWindow(
+            self, 
+            template=template, 
+            clone_mode=is_readonly, # Force clone mode for system templates
+            on_save_callback=lambda _: self.populate_ui()
         )
-        alert.get_content_area().append(content)
+        if is_readonly:
+            win.set_title(f"Copying System Template: {template['name']}")
+            
+        win.present()
+
+    def on_rename_clicked(self, template):
+        entry = Gtk.Entry(text=template['name'])
+        box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=10)
+        box.set_margin_top(12)
+        box.set_margin_bottom(12)
+        box.append(Gtk.Label(label=f"Enter new name for '{template['name']}':"))
+        box.append(entry)
+
+        dialog = Gtk.MessageDialog(
+            transient_for=self, 
+            modal=True, 
+            text="Rename Template", 
+            buttons=Gtk.ButtonsType.OK_CANCEL
+        )
+        dialog.get_content_area().append(box)
         
-        def response(dialog, response_id):
-            if response_id == Gtk.ResponseType.OK:
+        def on_response(d, res):
+            if res == Gtk.ResponseType.OK:
                 new_name = entry.get_text().strip()
                 if new_name and new_name != template['name']:
-                    old_path = pathlib.Path(template['path'])
-                    new_path = old_path.with_name(f"{new_name}.yaml")
-                    try:
-                        os.rename(old_path, new_path)
-                        self.refresh_list()
-                    except Exception as e:
-                        print(f"Rename failed: {e}")
-            dialog.destroy()
+                    # Call the Model to handle the file rename
+                    success, msg = TemplateDataModel.rename_template(template['path'], new_name)
+                    if success:
+                        self.populate_ui()
+                    else:
+                        err = Gtk.AlertDialog(message=f"Error: {msg}")
+                        err.show(self)
+            d.destroy()
 
-        alert.connect("response", response)
-        alert.present()
+        dialog.connect("response", on_response)
+        dialog.present()

@@ -1,12 +1,12 @@
 import gi
 gi.require_version("Gdk", "4.0")
 from gi.repository import Gtk, Gdk, Pango
+from Models.TemplateDataModel import TemplateDataModel
 from UI.CodecPickerWindow import CodecPickerWindow
 from UI.EncoderParameterPickerWindow import EncoderParameterPickerWindow
 from UI.Core import UICore
 import copy
 import yaml
-from pathlib import Path
 
 class TemplateEditorWindow(Gtk.ApplicationWindow):
     def __init__(self, parent_window, template, on_save_callback=None, locked_type=None, clone_mode=False, **kwargs):
@@ -82,8 +82,6 @@ class TemplateEditorWindow(Gtk.ApplicationWindow):
         self.combo_type.connect("notify::selected", self.on_type_changed)
         self.codec_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL)
 
-        grid.attach(Gtk.Label(label="Name:", halign=Gtk.Align.END), 0, 0, 1, 1)
-        grid.attach(self.entry_name, 1, 0, 1, 1)
         grid.attach(Gtk.Label(label="Type:", halign=Gtk.Align.END), 0, 1, 1, 1)
         grid.attach(self.combo_type, 1, 1, 1, 1)
         grid.attach(Gtk.Label(label="Codec:", halign=Gtk.Align.END), 0, 2, 1, 1)
@@ -355,28 +353,44 @@ class TemplateEditorWindow(Gtk.ApplicationWindow):
         return self.all_types[self.combo_type.get_selected()]
 
     def load_structured_template(self, template):
-        # The YAML structure has 'name' at top level and 'codec'/'type' inside 'data' or top level
+        # 1. Name comes from the filename (stem) passed by the model
         name = template.get('name', '')
         self.entry_name.set_text(name)
 
-        # Lock name if we are editing an existing system template or named file
+        # Lock name if we are editing an existing template (not cloning)
         if name and not self.clone_mode:
             self.entry_name.set_editable(False)
             self.entry_name.set_can_focus(False)
 
-        # Normalize data access
+        # 2. Extract technical data (the actual YAML content)
+        # If 'data' key exists (from model), use it; otherwise assume top-level
         data = template.get('data', template)
+        
         self.selected_codec = data.get('codec', 'libx264')
 
-        # Update Type Dropdown
+        # 3. Update Type Dropdown
         target_type = self.locked_type or data.get('type', 'video')
         try:
-            idx = self.all_types.index(target_type.lower())
+            # Match the case-insensitive type string to our internal list
+            idx = [t.lower() for t in self.all_types].index(target_type.lower())
             self.combo_type.set_selected(idx)
         except (ValueError, AttributeError):
             pass
 
-        # Add rows - create_value_widget will handle its own schema lookup now
+        # 4. Load Filter Mode if widget exists
+        if hasattr(self, 'combo_filter_mode'):
+            f_data = data.get('filters', {})
+            f_mode = f_data.get('mode', 'simple').capitalize()
+            # Find index in ["Simple", "Complex"]
+            for i in range(2):
+                if self.combo_filter_mode.get_model().get_string(i) == f_mode:
+                    self.combo_filter_mode.set_selected(i)
+                    break
+
+        # 5. Clear and Add Encoder rows
+        while child := self.lst_encoder.get_first_child():
+            self.lst_encoder.remove(child)
+            
         params = data.get('parameters', {}).get('options', {})
         for k, v in params.items():
             self.add_row_to_list(self.lst_encoder, k, v)
@@ -386,52 +400,29 @@ class TemplateEditorWindow(Gtk.ApplicationWindow):
         dialog = Gtk.AlertDialog(message=message)
         dialog.show(self)
 
-    def on_save_clicked(self, _):
-        name = self.entry_name.get_text().strip()
-        if not name:
-            self.show_error_dialog("Template name cannot be empty.")
-            return
-
-        # Prepare path
-        base_dir = Path("./templates")
-        base_dir.mkdir(exist_ok=True)
-        save_path = base_dir / f"{name}.yaml"
-
-        # Check if file exists
-        if save_path.exists():
-            # In GTK4, AlertDialog is the preferred way for Yes/No
-            dialog = Gtk.AlertDialog(
-                message=f"Template '{name}' already exists.",
-                detail="Do you want to overwrite the existing file?",
-                buttons=["Cancel", "Overwrite"]
-            )
-            
-            # Use choose() for async handling to avoid blocking the main loop
-            dialog.choose(self, None, self._on_overwrite_confirmed, save_path)
-        else:
-            # New file, save directly
-            self._execute_save(save_path)
-
-    def _on_overwrite_confirmed(self, dialog, result, save_path):
-        """Callback for the Overwrite alert dialog."""
-        response = dialog.choose_finish(result)
-        if response == 1: # "Overwrite" button index
-            self._execute_save(save_path)
-
-    def _execute_save(self, save_path):
-        """The actual file writing logic."""
-        name = self.entry_name.get_text().strip()
+    def _get_options_from_rows(self):
+        """Iterates through the ListBox and collects key-value pairs."""
         options = {}
         row = self.lst_encoder.get_first_child()
         while row:
+            # GTK ListBox rows might contain separators or focus placeholders
             if hasattr(row, "_key_widget") and hasattr(row, "_val_widget"):
                 key = row._key_widget.get_label()
                 if key != "Select...":
                     options[key] = self.extract_widget_value(row._val_widget)
             row = row.get_next_sibling()
+        return options
 
+    def on_save_clicked(self, _):
+        filename = self.entry_name.get_text().strip()
+        if not filename:
+            self.show_error_dialog("Template name cannot be empty.")
+            return
+
+        options = self._get_options_from_rows()
+        
+        # Construct technical data
         yaml_data = {
-            "name": name,
             "type": self.get_selected_type(),
             "codec": self.selected_codec,
             "parameters": {"options": options},
@@ -442,13 +433,26 @@ class TemplateEditorWindow(Gtk.ApplicationWindow):
         }
 
         try:
-            with open(save_path, 'w') as f:
-                yaml.dump(yaml_data, f, sort_keys=False, indent=4)
+            # Use the directory provided by the main application object
+            TemplateDataModel.save_template(self.app.templates_dir, filename, yaml_data)
+            
             if self.on_save_callback:
-                self.on_save_callback(name)
+                self.on_save_callback(filename)
             self.destroy()
         except Exception as e:
-            self.show_error_dialog(f"Failed to save template: {str(e)}")
+            self.show_error_dialog(f"Save failed: {str(e)}")
+
+    def _get_options_from_rows(self):
+        options = {}
+        row = self.lst_encoder.get_first_child()
+        while row:
+            # We must verify the row has the child widgets we expect
+            if hasattr(row, "_key_widget") and hasattr(row, "_val_widget"):
+                key = row._key_widget.get_label()
+                if key and key != "Select...":
+                    options[key] = self.extract_widget_value(row._val_widget)
+            row = row.get_next_sibling()
+        return options
 
     def extract_widget_value(self, w):
         """Helper to get the technical value from various widget types."""

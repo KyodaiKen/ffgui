@@ -2,8 +2,8 @@ type: video
 codec: libsvtav1
 parameters:
     options:
-        b: '18000'
-        preset: '5'
+        b: 18000000
+        preset: 5
 filters:
     mode: simple
     entries: []

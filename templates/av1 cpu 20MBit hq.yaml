@@ -1,9 +1,8 @@
-name: av1 cpu 20MBit hq
 type: video
 codec: libsvtav1
 parameters:
     options:
-        b: 20000
+        b: 20000000
         preset: 5
 filters:
     mode: simple
