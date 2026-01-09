@@ -1,0 +1,10 @@
+type: video
+codec: hevc_nvenc
+parameters:
+    options:
+        cq: 0
+        preset: p7
+        2pass: false
+filters:
+    mode: simple
+    entries: []

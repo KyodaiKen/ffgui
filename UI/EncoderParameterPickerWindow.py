@@ -123,6 +123,7 @@ class EncoderParameterPickerWindow(Gtk.ApplicationWindow):
     def on_search_changed(self, entry):
         self.populate_list(entry.get_text())
 
-    def on_row_activated(self, lb, row):
-        self.on_select(row._data['name'], row._data['schema'])
+    def on_row_activated(self, listbox, row):
+        parameter_name = row._data['name']
+        self.on_select(parameter_name)
         self.destroy()

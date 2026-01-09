@@ -133,67 +133,54 @@ class TemplateEditorWindow(Gtk.ApplicationWindow):
     # --- WIDGET FACTORY ---
 
     def create_value_widget(self, key, value, schema):
+        # 1. Handle dictionary-as-value (when schema is passed as 'value')
+        if isinstance(value, dict) and 'type' in value:
+            schema = value
+            value = schema.get("default", "")
+
+        # 2. THE CRITICAL FIX: Robust Schema Lookup
         if not schema and key:
-            params = self.get_codec_params_list()
-            schema = next((p for p in params if p.get('name') == key), None)
+            # We must search the full pool including common parameters
+            pool = self.get_codec_params_list()
+            schema = next((p for p in pool if p.get('name') == key), None)
 
+        # 3. Fallback if schema is still missing
         if not schema:
-            return Gtk.Entry(text=str(value), hexpand=True)
+            return Gtk.Entry(text=str(value or ""), hexpand=True)
 
-        p_type = schema.get("type", "string")
-        options = schema.get("options")
+        # 4. Success: Use the found schema to build the rich widget
+        p_type = str(schema.get("type", "string")).lower()
+        options_list = schema.get("options", [])
 
-        # Handle Enums
-        if p_type == "enum" and options:
-            tech_values = [str(k) for k in options.keys()] if isinstance(options, dict) else [str(o) for o in options]
-            choices = [f"{v.get('sdesc', k)} ({v.get('ldesc', '')})" for k, v in options.items()] if isinstance(options, dict) else tech_values
-
-            w = Gtk.DropDown(model=Gtk.StringList.new(choices), hexpand=True)
+        # Dropdowns (Enums)
+        if options_list and isinstance(options_list, list):
+            tech_values = [str(o.get('name', '')) for o in options_list]
+            display_names = [f"{o.get('name')} ({o.get('descr')})" if o.get('descr') else str(o.get('name')) for o in options_list]
+            w = Gtk.DropDown(model=Gtk.StringList.new(display_names), hexpand=True)
             w._tech_values = tech_values
-            if value:
-                try: w.set_selected(tech_values.index(str(value)))
-                except ValueError: pass
+            try:
+                if value: w.set_selected(tech_values.index(str(value)))
+            except ValueError: pass
             return w
 
-        # Handle Numeric
-        if p_type in ["integer", "float"]:
-            adj = Gtk.Adjustment(value=float(value or schema.get("default", 0)),
-                                 lower=float(schema.get("min", -999999)),
-                                 upper=float(schema.get("max", 999999)),
-                                 step_increment=1.0 if p_type == "integer" else 0.1)
+        # Numbers (The Spinner you are looking for)
+        if any(t in p_type for t in ["int", "integer", "float", "double"]):
+            is_float = "float" in p_type or "double" in p_type
+            try:
+                v_min = float(schema.get("min", -2147483648))
+                v_max = float(schema.get("max", 2147483647))
+                v_cur = float(value) if value not in [None, ""] else float(schema.get("default", 0))
+            except (ValueError, TypeError):
+                v_min, v_max, v_cur = 0, 100, 0
+
+            adj = Gtk.Adjustment(value=v_cur, lower=v_min, upper=v_max,
+                                 step_increment=0.1 if is_float else 1.0)
             w = Gtk.SpinButton(adjustment=adj, numeric=True)
-            if p_type == "float": w.set_digits(2)
+            if is_float: w.set_digits(2)
             return w
 
-        # Handle Flags (Checkboxes in Popover)
-        if p_type == "flags" and options:
-            w = Gtk.MenuButton(label="None Selected", hexpand=True)
-            popover = Gtk.Popover()
-            vbox = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=4)
-            vbox.set_margin_start(8); vbox.set_margin_end(8); vbox.set_margin_top(8); vbox.set_margin_bottom(8)
-
-            selected_flags = str(value).split("+") if value else []
-            check_buttons = {}
-
-            def on_flag_toggled(*_):
-                active = [info['sdesc'] for k, (cb, info) in check_buttons.items() if cb.get_active()]
-                w.set_label("+".join(active) if active else "None")
-
-            for f_key, f_info in options.items():
-                cb = Gtk.CheckButton(label=f_info.get('sdesc', f_key))
-                cb.set_active(f_key in selected_flags)
-                cb.connect("toggled", on_flag_toggled)
-                vbox.append(cb)
-                check_buttons[f_key] = (cb, f_info)
-
-            popover.set_child(vbox)
-            w.set_popover(popover)
-            w._check_buttons = check_buttons
-            on_flag_toggled()
-            return w
-
-        # Handle Boolean
-        if p_type == "boolean":
+        # Booleans
+        if p_type in ["bool", "boolean"]:
             return Gtk.Switch(active=str(value).lower() in ['true', '1', 'on'], halign=Gtk.Align.START)
 
         return Gtk.Entry(text=str(value), hexpand=True)
@@ -203,65 +190,102 @@ class TemplateEditorWindow(Gtk.ApplicationWindow):
     def add_row_to_list(self, listbox, key="", value="", schema=None):
         row_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
 
+        # 1. The Key Button
         btn_key = Gtk.Button(label=key or "Select...", width_request=150)
         self.encoder_keys_group.add_widget(btn_key)
 
         if listbox == self.lst_encoder:
             btn_key.connect("clicked", self.on_encoder_picker_clicked)
 
+        # 2. The Value Widget
         val_widget = self.create_value_widget(key, value, schema)
+
+        # 3. THE FIX: Add a spacer to push the delete button to the right
+        # This widget will gobble up all empty space between the switch and trash icon
+        spacer = Gtk.Box(hexpand=True)
+
+        # 4. The Delete Button
         btn_del = Gtk.Button(icon_name="user-trash-symbolic")
 
         row_box.append(btn_key)
         row_box.append(val_widget)
+        row_box.append(spacer) # Inserted spacer
         row_box.append(btn_del)
 
         row = Gtk.ListBoxRow(child=row_box)
         row._key_widget, row._val_widget = btn_key, val_widget
+
         btn_del.connect("clicked", lambda *_: listbox.remove(row))
         listbox.append(row)
 
     # --- DATA FLOW ---
 
     def get_codec_params_list(self):
-        all_codecs = self.app.ffmpeg_data.get('codecs', [])
-        codec_obj = next((c for c in all_codecs if c['name'] == self.selected_codec), None)
-        return codec_obj.get("parameters", []) if codec_obj else []
+        data = getattr(self.app, 'ffmpeg_data', {})
+        if not data:
+            return []
 
-    def load_structured_template(self, template):
-        data = template.get('data', {})
-        self.entry_name.set_text(template['name'])
-        if template['name']:
-            self.entry_name.set_sensitive(False)
+        all_params = []
+        stream_type = self.get_selected_type() # "video", "audio", etc.
 
-        target_type = self.locked_type or data.get('type', 'video')
-        try:
-            self.combo_type.set_selected(self.all_types.index(target_type.lower()))
-            if self.locked_type: self.combo_type.set_sensitive(False)
-        except ValueError: pass
+        # 1. Get Codec-Specific Params
+        codecs = data.get('codecs', [])
+        codec_obj = next((c for c in codecs if c.get('name') == self.selected_codec), None)
+        if codec_obj:
+            all_params.extend(codec_obj.get("parameters", []))
 
-        options = data.get('parameters', {}).get('options', {})
-        for k, v in options.items():
-            self.add_row_to_list(self.lst_encoder, k, v)
+        # 2. Get Global Params (Matching your Picker logic)
+        groups = data.get('globals', [])
+        for group in groups:
+            group_name = group.get("name", "").lower()
+
+            # Filter logic matching your EncoderParameterPickerWindow
+            should_include = (group_name == "av_options") or \
+                             (group_name == "video" and stream_type == "video") or \
+                             (group_name == "audio" and stream_type == "audio") or \
+                             (group_name == "subtitle" and stream_type == "subtitle")
+
+            if should_include:
+                # Add these global parameters to our search pool
+                all_params.extend(group.get("parameters", []))
+
+        return all_params
 
     # --- HANDLERS ---
 
     def on_add_encoder_param(self, _):
-        def on_selected(k, s): self.add_row_to_list(self.lst_encoder, k, s)
-        picker = EncoderParameterPickerWindow(self, self.selected_codec, self.get_selected_type(), self.get_codec_params_list(), on_selected)
+        def on_selected(k):
+            self.add_row_to_list(self.lst_encoder, k, value=None)
+
+        picker = EncoderParameterPickerWindow(
+            self,
+            self.selected_codec,
+            self.get_selected_type(),
+            self.get_codec_params_list(),
+            on_selected
+        )
         picker.present()
 
     def on_encoder_picker_clicked(self, button):
         row = button.get_parent().get_parent()
-        def on_selected(k, s):
+        def on_selected(k):
             button.set_label(k)
             row_box = row.get_child()
             row_box.remove(row._val_widget)
-            new_w = self.create_value_widget(k, "", s)
+
+            # We call create_value_widget with no schema; it will look it up itself
+            new_w = self.create_value_widget(k, value=None, schema=None)
+
             row_box.insert_child_after(new_w, button)
             row._val_widget = new_w
 
-        picker = EncoderParameterPickerWindow(self, self.selected_codec, self.get_selected_type(), self.get_codec_params_list(), on_selected)
+        picker = EncoderParameterPickerWindow(
+            self,
+            self.selected_codec,
+            self.get_selected_type(),
+            self.get_codec_params_list(),
+            on_selected
+        )
         picker.present()
 
     def update_codec_ui(self):
@@ -282,27 +306,117 @@ class TemplateEditorWindow(Gtk.ApplicationWindow):
     def get_selected_type(self):
         return self.all_types[self.combo_type.get_selected()]
 
-    def on_save_clicked(self, _):
-        name = self.entry_name.get_text().strip()
-        if not name: return
+    def load_structured_template(self, template):
+        # The YAML structure has 'name' at top level and 'codec'/'type' inside 'data' or top level
+        name = template.get('name', '')
+        self.entry_name.set_text(name)
 
+        # Lock name if we are editing an existing system template or named file
+        if name:
+            self.entry_name.set_editable(False)
+            self.entry_name.set_can_focus(False)
+
+        # Normalize data access
+        data = template.get('data', template)
+        self.selected_codec = data.get('codec', 'libx264')
+
+        # Update Type Dropdown
+        target_type = self.locked_type or data.get('type', 'video')
+        try:
+            idx = self.all_types.index(target_type.lower())
+            self.combo_type.set_selected(idx)
+        except (ValueError, AttributeError):
+            pass
+
+        # Add rows - create_value_widget will handle its own schema lookup now
+        params = data.get('parameters', {}).get('options', {})
+        for k, v in params.items():
+            self.add_row_to_list(self.lst_encoder, k, v)
+
+    def show_error_dialog(self, message):
+        """Standard GTK4 Message Dialog helper."""
+        dialog = Gtk.AlertDialog(message=message)
+        dialog.show(self)
+
+    def on_save_clicked(self, _):
+        # 1. Get the name from the Entry widget
+        name = self.entry_name.get_text().strip()
+
+        # 2. Validation
+        if not name:
+            self.show_error_dialog("Template name cannot be empty.")
+            return
+
+        # 3. Reconstruct the template data from the UI rows
         options = {}
         row = self.lst_encoder.get_first_child()
         while row:
-            key = row._key_widget.get_label()
-            if key != "Select...":
-                w = row._val_widget
-                if isinstance(w, Gtk.DropDown): val = w._tech_values[w.get_selected()]
-                elif isinstance(w, Gtk.SpinButton): val = w.get_value()
-                elif isinstance(w, Gtk.Switch): val = w.get_active()
-                elif isinstance(w, Gtk.MenuButton):
-                    val = "+".join([k for k, (cb, _) in w._check_buttons.items() if cb.get_active()])
-                else: val = w.get_text()
-                options[key] = val
+            # list_box rows in GTK4 can be separators or headers, so check for our attributes
+            if hasattr(row, "_key_widget") and hasattr(row, "_val_widget"):
+                key = row._key_widget.get_label()
+                if key != "Select...":
+                    options[key] = self.extract_widget_value(row._val_widget)
             row = row.get_next_sibling()
 
-        # Save implementation...
-        if self.on_save_callback: self.on_save_callback(name)
-        self.destroy()
+        # 4. Build the YAML structure
+        # Note: We include 'name' at the top level of the file so it can be loaded back
+        yaml_data = {
+            "name": name,
+            "type": self.get_selected_type(),
+            "codec": self.selected_codec,
+            "parameters": {"options": options},
+            "filters": {
+                "mode": self.combo_filter_mode.get_selected_item().get_string().lower() if hasattr(self, 'combo_filter_mode') else "simple",
+                "entries": []
+            }
+        }
+
+        # 5. Determine Save Path
+        # If we have an existing path, keep it. Otherwise, create a new one.
+        if self.template.get('path'):
+            save_path = Path(self.template['path'])
+        else:
+            base_dir = Path("./templates")
+            base_dir.mkdir(exist_ok=True)
+            save_path = base_dir / f"{name.replace(' ', '_')}.yaml"
+
+        # 6. Save
+        try:
+            with open(save_path, 'w') as f:
+                yaml.dump(yaml_data, f, sort_keys=False, indent=4)
+
+            if self.on_save_callback:
+                self.on_save_callback(name)
+
+            self.destroy()
+
+        except Exception as e:
+            self.show_error_dialog(f"Failed to save template: {str(e)}")
+
+    def extract_widget_value(self, w):
+        """Helper to get the technical value from various widget types."""
+        if isinstance(w, Gtk.DropDown):
+            # Use our custom attribute stored during creation
+            if hasattr(w, "_tech_values"):
+                return w._tech_values[w.get_selected()]
+            return w.get_selected_item().get_string()
+
+        elif isinstance(w, Gtk.SpinButton):
+            # Check if it's effectively an integer
+            val = w.get_value()
+            return int(val) if val.is_integer() else val
+
+        elif isinstance(w, Gtk.Switch):
+            return w.get_active()
+
+        elif isinstance(w, Gtk.Entry):
+            return w.get_text()
+
+        elif isinstance(w, Gtk.MenuButton) and hasattr(w, "_check_buttons"):
+            # Flag extraction
+            active = [k for k, (cb, _) in w._check_buttons.items() if cb.get_active()]
+            return "+".join(active)
+
+        return ""
 
     def on_add_filter(self, _): pass

@@ -1,0 +1,9 @@
+name: flac best
+type: video
+codec: flac
+parameters:
+    options:
+        compression_level: 8
+filters:
+    mode: simple
+    entries: []

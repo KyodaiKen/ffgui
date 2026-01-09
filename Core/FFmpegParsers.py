@@ -231,13 +231,19 @@ class FFmpegGlobalsParser(FFmpegBaseParser):
     def parse_list(self):
         return [{"name": "video"}, {"name": "audio"}, {"name": "subtitle"}, {"name": "av_options"}]
 
-    def _determine_target_section(self, current_section, flags):
+    def _determine_target_sections(self, current_section, flags):
+        """Returns a list of all applicable sections for a given parameter."""
+        # If we are in a specific header (e.g., 'Video options'), keep it pinned
         if current_section != "av_options":
-            return current_section
-        if "V" in flags: return "video"
-        if "A" in flags: return "audio"
-        if "S" in flags: return "subtitle"
-        return "av_options"
+            return [current_section]
+
+        targets = []
+        if "V" in flags: targets.append("video")
+        if "A" in flags: targets.append("audio")
+        if "S" in flags: targets.append("subtitle")
+
+        # If no specific media flags are found, default to general av_options
+        return targets if targets else ["av_options"]
 
     def parse_details(self, section_name):
         if not self._full_help_output:
@@ -256,16 +262,11 @@ class FFmpegGlobalsParser(FFmpegBaseParser):
             if not line.strip():
                 continue
 
-            # 1. Section Header Detection & Early Exit
+            # 1. Section Header Detection
             if line.endswith(":") or "AVOptions" in line:
                 header = line.strip().rstrip(":")
-
-                # If we were already in AVOptions and find a NEW specific AVOptions section, STOP.
-                # This catches things like 'amv encoder AVOptions:', 'libx264 AVOptions:', etc.
                 if processing_av_options and "AVOptions" in line and "AVCodecContext" not in line:
                     break
-
-                # Identify if we are entering the general AVOptions block
                 if "AVCodecContext AVOptions" in line:
                     processing_av_options = True
 
@@ -273,21 +274,25 @@ class FFmpegGlobalsParser(FFmpegBaseParser):
                 last_param = None
                 continue
 
-            # 2. Parameter Parsing (Only if they start with '-')
+            # 2. Parameter Parsing
             av_match = av_pattern.match(line)
             std_match = std_pattern.match(line)
 
             if av_match or std_match:
                 if av_match:
                     name, p_type, flags, raw_descr = av_match.groups()
-                    target = self._determine_target_section(current_header_section, flags)
-                    if target == section_name:
+                    # Determine ALL sections this parameter belongs to
+                    targets = self._determine_target_sections(current_header_section, flags)
+
+                    # Check if the currently requested section is in the list
+                    if section_name in targets:
                         parsed = self._clean_descr(raw_descr)
                         last_param = self._create_param_dict(name, p_type, flags, parsed, section_name)
                         params.append(last_param)
                     else:
                         last_param = None
                 else:
+                    # Standard parameters (usually from specific headers like 'Video options')
                     name, p_type, descr = std_match.groups()
                     if current_header_section == section_name:
                         parsed = {"clean_descr": descr.strip(), "min": None, "max": None, "default": None}
@@ -297,7 +302,7 @@ class FFmpegGlobalsParser(FFmpegBaseParser):
                         last_param = None
                 continue
 
-            # 3. Choice/Option Parsing (Nested under last_param)
+            # 3. Choice/Option Parsing
             opt_match = opt_pattern.match(line)
             if opt_match and last_param:
                 if not line.strip().startswith("-"):
