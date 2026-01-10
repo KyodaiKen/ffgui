@@ -1,9 +1,8 @@
-type: video
-codec: libsvtav1
+type: audio
+codec: libopus
 parameters:
     options:
-        b: 768000
-        preset: 5
+        b: 128000
 filters:
     mode: simple
     entries: []

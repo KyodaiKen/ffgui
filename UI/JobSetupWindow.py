@@ -241,54 +241,61 @@ class JobSetupWindow(Gtk.ApplicationWindow):
 
     def on_save_job_clicked(self, _):
         """Gathers UI data into JobDataModel format and saves"""
-        # 1. FORCE SYNC: This populates self.source_paths from the ListBox
         self.sync_data_model() 
-        
-        # 2. SAVE STREAM STATE: This populates self.selected_streams from the rows
         self.save_stream_state()
         
-        # Now proceed with building the dict
         final_data = JobsDataModel.create_empty_job()
         final_data["name"] = self.entry_name.get_text()
         final_data["output"]["directory"] = self.entry_output_dir.get_text()
         final_data["output"]["filename"] = self.entry_output_filename.get_text()
         final_data["output"]["container"] = self.selected_container
-        
-        # Use the freshly synced paths
         final_data["sources"]["files"] = self.source_paths
-        
-        # Streams
+
+        # --- NEW: Calculate Durations for Metadata ---
+        file_durations = {}
+        for path in self.source_paths:
+            try:
+                # Use the existing parser to find the longest stream
+                info = self.app.parsers['media'].get_info(path)
+                # Filter for streams that have a duration and find the max
+                durations = [float(s.get('duration', 0)) for s in info.get('streams', [])]
+                # Fallback to format duration if stream duration is missing
+                if not durations or max(durations) == 0:
+                    durations = [float(info.get('format', {}).get('duration', 0))]
+                
+                # Convert to milliseconds for the Runner
+                file_durations[path] = int(max(durations) * 1000)
+            except Exception as e:
+                print(f"Error probing duration for {path}: {e}")
+                file_durations[path] = 0
+
+        # Build Stream Data
         for (path, idx), settings in self.selected_streams.items():
             try:
-                # If sync_data_model worked, the path MUST be in source_paths
                 file_idx = self.source_paths.index(path)
-
-                disp = settings.get("disposition", [])
-                # If it's a string from the UI, split it. If it's already a list, use it.
-                if isinstance(disp, str):
-                    disposition_list = [d.strip() for d in disp.split(",") if d.strip()]
-                else:
-                    disposition_list = disp
-
-                final_data["sources"]["streams"].append({
+                
+                # Construct stream entry with duration in import_metadata
+                stream_entry = {
                     "file": file_idx,
                     "index": idx,
                     "active": settings.get("active", False),
                     "template": settings.get("template", ""),
-                    "disposition": disposition_list,
-                    "language": settings.get("language", "")
-                })
+                    "disposition": settings.get("disposition", []),
+                    "language": settings.get("language", ""),
+                    "import_metadata": {
+                        "duration": file_durations.get(path, 0) # Saved in ms
+                    }
+                }
+                final_data["sources"]["streams"].append(stream_entry)
             except ValueError:
-                print(f"Warning: Path {path} not found in source_paths during save.")
                 continue
 
-        # Validate
+        # Validate and return
         valid, errs = JobsDataModel.validate_job_data(self.app, final_data)
         if not valid:
             self.show_error_dialog("\n".join(errs))
             return
 
-        # Return to parent window (logic for file selection handled by caller)
         if self.on_job_setup_finished:
             self.on_job_setup_finished(final_data)
 

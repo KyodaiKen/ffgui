@@ -10,6 +10,7 @@ from UI.JobRow import JobRow
 from UI.JobSetupWindow import JobSetupWindow
 from UI.TemplateManagerWindow import TemplateManagerWindow
 from UI.Constants import MENU_XML
+from Core.JobRunner import JobRunner, JobStatus
 
 class MainWindow(Gtk.ApplicationWindow):
     def __init__(self, **kargs):
@@ -88,10 +89,11 @@ class MainWindow(Gtk.ApplicationWindow):
         self.pb.set_text("34.38%, ETA 8s")
         self.pb.set_show_text(True)
         self.pb.set_fraction(0.34375)
-        btn_start = Gtk.Button(label="Start")
+        self.btn_start = Gtk.Button(label="Start")
+        self.btn_start.connect("clicked", self.on_start_clicked)
         bottom_box.append(label)
         bottom_box.append(self.pb)
-        bottom_box.append(btn_start)
+        bottom_box.append(self.btn_start)
         box_bottom.append(bottom_box)
 
         # Drop Target Setup
@@ -99,6 +101,8 @@ class MainWindow(Gtk.ApplicationWindow):
         drop_target = Gtk.DropTarget.new(Gdk.FileList, Gdk.DragAction.COPY)
         drop_target.connect("drop", self.on_file_drop)
         self.listbox.add_controller(drop_target)
+
+        self.is_running = False
 
     #def on_drag_begin(self, gesture, start_x, start_y):
     #    pass
@@ -408,3 +412,78 @@ class MainWindow(Gtk.ApplicationWindow):
     def on_quit(self, action, param):
         if self.app:
             self.app.quit()
+
+    def on_start_clicked(self, button):
+        """Triggered by the Start button"""
+        if self.is_running:
+            return
+
+        # 1. Collect all jobs currently in the listbox
+        jobs_to_run = []
+        child = self.listbox.get_first_child()
+        while child:
+            if isinstance(child, JobRow):
+                # Initialize status for the runner to pick up
+                child.job_data['_internal_status'] = JobStatus.PENDING
+                jobs_to_run.append(child.job_data)
+            child = child.get_next_sibling()
+
+        if not jobs_to_run:
+            self._show_error("Queue Empty", "Please add at least one job before starting.")
+            return
+
+        # 2. Get the executable path directly from the app instance
+        # This uses the logic defined in your setup_ffmpeg_execs method
+        ffmpeg_bin = self.app.ffmpeg_full_exec_path
+
+        # 3. Setup the Runner
+        runner = JobRunner(
+            job_list=jobs_to_run,
+            ffmpeg_executable_path=ffmpeg_bin,
+            update_callback=self._runner_thread_callback
+        )
+
+        # 4. Lock UI and Start Background Thread
+        self.is_running = True
+        self.btn_start.set_sensitive(False)
+        self.btn_start.set_label("Running...")
+        
+        threading.Thread(target=runner.run, daemon=True).start()
+
+    def _runner_thread_callback(self, job_info, total_info, total_pct):
+        """
+        Receives updates from the background JobRunner thread.
+        Redirects to the main loop to update the UI safely.
+        """
+        GLib.idle_add(self._update_ui_progress, job_info, total_info, total_pct)
+
+    def _update_ui_progress(self, job_info, total_info, total_pct):
+        """Updates the progress bars and individual job rows on the main thread."""
+        # Update Total Progress (The bottom bar)
+        self.pb.set_fraction(total_pct / 100.0)
+        self.pb.set_text(total_info)
+
+        # Iterate rows to find the one being processed
+        child = self.listbox.get_first_child()
+        while child:
+            if isinstance(child, JobRow):
+                status = child.job_data.get('_internal_status')
+                
+                if status == JobStatus.RUNNING:
+                    child.update_status(job_info)
+                elif status == JobStatus.COMPLETED:
+                    child.update_status("Completed")
+                    child.progress_bar.set_fraction(1.0)
+                elif status == JobStatus.FAILED:
+                    child.update_status("Failed")
+
+            child = child.get_next_sibling()
+
+        # Handle Final State
+        if total_pct >= 100:
+            self.is_running = False
+            self.btn_start.set_sensitive(True)
+            self.btn_start.set_label("Start")
+            self.pb.set_text("Batch Finished")
+        
+        return False # Required for GLib.idle_add to stop repeating

@@ -28,31 +28,17 @@ def main():
             job_name = job.get('name', f'Job {i}')
             print(f"[{i}] Processing: {job_name}")
 
-            # 2. Bridge the Data Structure
-            # The Compiler expects 'inputs' and 'streams' at the top level, 
-            # while JobsDataModel nests them under 'sources'.
-            compiler_input = {
-                "inputs": job.get("sources", {}).get("files", []),
-                "streams": job.get("sources", {}).get("streams", []),
-                "output": job.get("output", {})
-            }
-
             if args.verbose:
-                print(f"    - Input Files: {len(compiler_input['inputs'])}")
-                print(f"    - Total Streams: {len(compiler_input['streams'])}")
+                print(f"    - Input Files: {len(job.get('sources', {}).get('files', []))}")
+                print(f"    - Total Streams: {len(job.get('sources', {}).get('streams', {}))}")
 
             # 3. Generate the Command
             try:
                 # We add the output filename/path at the end for a complete debug string
-                cmd_args = FFmpegCmdCompiler.gen_cmd_from_job(compiler_input)
+                cmd_args = FFmpegCmdCompiler.gen_cmd_from_job(job)
                 cmd_str = " ".join(cmd_args)
-                
-                out_dir = compiler_input['output'].get('directory', '.')
-                out_file = compiler_input['output'].get('filename', 'output')
-                out_ext = compiler_input['output'].get('container', 'mkv')
-                full_output_path = os.path.join(out_dir, f"{out_file}.{out_ext}")
 
-                full_command = f"ffmpeg {cmd_str} \"{full_output_path}\""
+                full_command = f"ffmpeg {cmd_str}"
 
                 print("\033[92mGenerated Command:\033[0m") # Print in green
                 print(f"{full_command}\n")

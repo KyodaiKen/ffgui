@@ -66,6 +66,35 @@ class JobRow(Gtk.ListBoxRow):
         self.popover.set_parent(self)
         self.popover.set_has_arrow(False)
     
+    def update_status(self, text):
+        """Updates the progress bar text and fraction for this specific row"""
+        # We can try to parse the percentage from the FFmpeg string 
+        # (JobRunner usually sends "Percentage% Speed=... ETA=...")
+        try:
+            if "%" in text:
+                pct_str = text.split("%")[0].strip()
+                fraction = float(pct_str) / 100.0
+                self.progress_bar.set_fraction(fraction)
+        except:
+            pass
+            
+        self.progress_bar.set_text(text)
+
+    def update_job_data(self, new_data):
+        """Updates the internal data and UI of this specific row"""
+        self.job_data = new_data
+        title = new_data.get("name") or "Job"
+        self.label.set_markup(f"<b>{title}</b>")
+        
+        # Flexibly handle 'sources' or 'inputs'
+        sources = new_data.get("sources") or new_data # Fallback if flat
+        files = sources.get("files") or new_data.get("inputs") or []
+        streams = sources.get("streams") or new_data.get("streams") or []
+        
+        src_count = len(files)
+        strm_count = len(streams)
+        self.lbl_info.set_markup(f"<span size='small' alpha='70%'>{src_count} Files, {strm_count} Streams</span>")
+
     def create_action(self, name, callback):
         action = Gio.SimpleAction.new(name, None)
         action.connect("activate", callback)
@@ -104,15 +133,6 @@ class JobRow(Gtk.ListBoxRow):
         # Update this specific row when finished
         wnd.on_job_setup_finished = self.update_job_data
         wnd.present()
-
-    def update_job_data(self, new_data):
-        """Updates the internal data and UI of this specific row"""
-        self.job_data = new_data
-        title = new_data.get("name") or "Job"
-        self.label.set_markup(f"<b>{title}</b>")
-        src_count = len(new_data["sources"]["files"])
-        strm_count = len(new_data["sources"]["streams"])
-        self.lbl_info.set_markup(f"<span size='small' alpha='70%'>{src_count} Files, {strm_count} Streams</span>")
 
     def on_remove(self, action, param):
         listbox = self.get_parent()
