@@ -41,16 +41,13 @@ class TemplateEditorWindow(Gtk.ApplicationWindow):
         self.update_codec_ui()
 
     def _prepare_template_data(self, template):
+        """Ensures the template is a flat dict for the editor, regardless of origin."""
         if template:
-            # If the template comes from the model with a 'data' wrapper, flatten it
-            if "data" in template:
-                flat = copy.deepcopy(template["data"])
-                flat["name"] = template.get("name", "")
-                flat["path"] = template.get("path", "")
-                return flat
-            return copy.deepcopy(template)
+            # Create a copy so we don't mutate the original list object
+            working_copy = copy.deepcopy(template)            
+            return working_copy
             
-        # Default structure for a brand new template (Matches your YAML)
+        # Default flat structure for a brand new template
         return {
             "name": "", 
             "type": "video", 
