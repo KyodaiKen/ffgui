@@ -1,7 +1,10 @@
 import gi
+import os
+import threading
+import time
 from Models.JobsDataModel import JobsDataModel
 gi.require_version("Gdk", "4.0")
-from gi.repository import Gtk, Gio, Gdk
+from gi.repository import Gtk, Gio, Gdk, GLib
 from UI.SettingsWindow import SettingsWindow
 from UI.JobRow import JobRow
 from UI.JobSetupWindow import JobSetupWindow
@@ -49,11 +52,16 @@ class MainWindow(Gtk.ApplicationWindow):
             action.connect("activate", callback)
             self.add_action(action)
 
-        # List box
-        self.listbox = Gtk.ListBox(vexpand=True)
+        # List box with ScrolledWindow
+        self.scrolled_window = Gtk.ScrolledWindow(vexpand=True)
+        self.scrolled_window.set_policy(Gtk.PolicyType.AUTOMATIC, Gtk.PolicyType.AUTOMATIC)
+
+        self.listbox = Gtk.ListBox()
         self.listbox.set_selection_mode(Gtk.SelectionMode.MULTIPLE)
         self.listbox.set_activate_on_single_click(False)
-        box_outer.append(self.listbox)
+        
+        self.scrolled_window.set_child(self.listbox)
+        box_outer.append(self.scrolled_window)
 
         self.drag_gesture = Gtk.GestureDrag.new()
         self.drag_gesture.set_propagation_phase(Gtk.PropagationPhase.BUBBLE)
@@ -85,6 +93,12 @@ class MainWindow(Gtk.ApplicationWindow):
         bottom_box.append(pb)
         bottom_box.append(btn_start)
         box_bottom.append(bottom_box)
+
+        # Drop Target Setup
+        # We look for Gdk.FileList (Standard for dragging files from file manager)
+        drop_target = Gtk.DropTarget.new(Gdk.FileList, Gdk.DragAction.COPY)
+        drop_target.connect("drop", self.on_file_drop)
+        self.listbox.add_controller(drop_target)
 
     #def on_drag_begin(self, gesture, start_x, start_y):
     #    pass
@@ -233,7 +247,146 @@ class MainWindow(Gtk.ApplicationWindow):
         return count
 
     def on_create_jobs_from_dir(self, action, param):
-        pass
+        dialog = Gtk.FileDialog.new()
+        dialog.set_title("Select Directory of Media Files")
+        dialog.select_folder(self, None, self._on_dir_import_finish)
+
+    def on_file_drop(self, target, value, x, y):
+        files = value.get_files()
+        paths = [f.get_path() for f in files]
+        
+        all_paths = []
+        for p in paths:
+            if os.path.isdir(p):
+                # Expand folder content
+                for entry in os.scandir(p):
+                    if entry.is_file():
+                        all_paths.append(entry.path)
+            else:
+                all_paths.append(p)
+
+        self._process_files_to_jobs(all_paths)
+        return True
+
+    def _on_dir_import_finish(self, dialog, result):
+        folder = dialog.select_folder_finish(result)
+        if not folder: return
+        
+        path = folder.get_path()
+        all_files = [os.path.join(path, f) for f in os.listdir(path)]
+        self._process_files_to_jobs(all_files)
+
+    def _process_files_to_jobs(self, file_paths):
+        """Universal threaded processor. Accepts all files; let FFMPEG decide validity."""
+        if not file_paths: return
+
+        progress_win = Gtk.Window(title="Importing Media...", transient_for=self, modal=True)
+        progress_win.set_default_size(300, 100)
+        vbox = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=10, margin_start=20, margin_end=20, margin_top=20, margin_bottom=20)
+        lbl = Gtk.Label(label="Probing files...")
+        pbar = Gtk.ProgressBar(show_text=True)
+        vbox.append(lbl)
+        vbox.append(pbar)
+        progress_win.set_child(vbox)
+
+        start_time = time.time()
+
+        def worker():
+            # Remove directory checks here - we only want files for the probe
+            files_to_probe = [p for p in file_paths if os.path.isfile(p)]
+            total = len(files_to_probe)
+            
+            for i, file_path in enumerate(files_to_probe):
+                # _get_job_data_from_file is called here in the background thread
+                job_dict = self._get_job_data_from_file(file_path)
+                
+                def update_ui(j=job_dict, idx=i):
+                    if j: 
+                        self.add_job_to_list(j)
+                    
+                    pbar.set_fraction((idx + 1) / total)
+                    pbar.set_text(f"{idx + 1} / {total}")
+                    
+                    # Show progress window only if processing takes > 1 second
+                    if not progress_win.get_visible() and (time.time() - start_time) > 0.5:
+                        progress_win.present()
+
+                GLib.idle_add(update_ui)
+
+            GLib.idle_add(progress_win.destroy)
+
+        threading.Thread(target=worker, daemon=True).start()
+
+    def _get_job_data_from_file(self, file_path):
+        """Probes a file and returns a Job dictionary. Returns None if probe fails."""
+        from Models.JobsDataModel import JobsDataModel
+        from Core.Utils import get_file_title
+        
+        try:
+            # If this fails, it's not a supported media file
+            info = self.app.parsers['media'].get_info(file_path)
+            if not info or "streams" not in info:
+                return None
+
+            job = JobsDataModel.create_empty_job()
+            job["name"] = get_file_title(file_path)
+            job["sources"]["files"] = [file_path]
+            job["output"]["directory"] = os.path.dirname(file_path)
+            job["output"]["filename"] = "" 
+            job["output"]["container"] = "auto"
+            
+            for idx, stream in enumerate(info.get('streams', [])):
+                stype = stream.get('codec_type', 'data').capitalize()
+                job["sources"]["streams"].append({
+                    "file": 0, "index": idx,
+                    "active": stype.lower() in ['video', 'audio'],
+                    "template": f"Copy {stype}",
+                    "disposition": [],
+                    "language": stream.get('tags', {}).get('language', '')
+                })
+            return job
+        except Exception as e:
+            print(f"FFMPEG could not probe {file_path}: {e}")
+            return None
+
+    def _create_job_from_single_file(self, file_path):
+        """Generates a job with your specific defaults."""
+        from Models.JobsDataModel import JobsDataModel
+        from Core.Utils import get_file_title
+        
+        # 1. Create base structure
+        job = JobsDataModel.create_empty_job()
+        
+        # 2. Set Names and Paths
+        job["name"] = get_file_title(file_path)
+        job["sources"]["files"] = [file_path]
+        job["output"]["directory"] = os.path.dirname(file_path)
+        job["output"]["filename"] = "" # Leave blank as requested
+        job["output"]["container"] = "auto"
+        
+        # 3. Probe file to set stream templates
+        try:
+            info = self.app.parsers['media'].get_info(file_path)
+            for idx, stream in enumerate(info.get('streams', [])):
+                stype = stream.get('codec_type', 'data').capitalize()
+                
+                # Apply the "Copy <Type>" default
+                template_name = f"Copy {stype}"
+                
+                job["sources"]["streams"].append({
+                    "file": 0,
+                    "index": idx,
+                    "active": stype.lower() in ['video', 'audio'], # Default active V/A
+                    "template": template_name,
+                    "disposition": [],
+                    "language": stream.get('tags', {}).get('language', '')
+                })
+        except Exception as e:
+            print(f"Skipping {file_path} due to probe error: {e}")
+            return
+
+        # 4. Add to UI
+        self.add_job_to_list(job)
 
     def on_pref(self, action, param):
         """Triggered by win.pref in the main menu."""

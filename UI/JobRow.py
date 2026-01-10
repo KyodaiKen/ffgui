@@ -50,6 +50,12 @@ class JobRow(Gtk.ListBoxRow):
 
         add_act("job_setup", self.on_job_setup)
         add_act("remove_job", self.on_remove)
+        add_act("job_clone", self.on_clone)
+
+        add_act("toggle_video", lambda a, p: self.on_smart_toggle("video"))
+        add_act("toggle_audio", lambda a, p: self.on_smart_toggle("audio"))
+        add_act("toggle_subtitles", lambda a, p: self.on_smart_toggle("subtitle"))
+
         add_act("batch_tpl_video", lambda a, p: self.on_batch_template("video"))
         add_act("batch_tpl_audio", lambda a, p: self.on_batch_template("audio"))
         add_act("batch_tpl_subtitle", lambda a, p: self.on_batch_template("subtitle"))
@@ -149,46 +155,115 @@ class JobRow(Gtk.ListBoxRow):
     def on_batch_template(self, target_type):
         """Opens a picker filtered by the selected stream type"""
         from UI.TemplatePickerWindow import TemplatePickerWindow
-        
-        # Store target_type for use in the callback
         self._current_batch_type = target_type 
 
         picker = TemplatePickerWindow(
             parent_window=self.get_root(),
             current_val="",
-            stream_type=target_type, # This prevents the NoneType error!
-            on_select=self._apply_batch_template_confirmed
+            stream_type=target_type,
+            on_select=self._apply_batch_template_to_selected
         )
         picker.present()
 
-    def _apply_batch_template_confirmed(self, template_name):
+    def _apply_batch_template_to_selected(self, template_name):
+        """Applies a template to all relevant streams in ALL selected jobs."""
         target_type = self._current_batch_type
         listbox = self.get_parent()
         selected_rows = listbox.get_selected_rows()
-        
-        # We need the parser to know which stream is what type inside the loop
-        # Since JobSetupWindow already has logic to get info, we assume 
-        # JobRow can access the app's media parser.
         media_parser = self.app.parsers['media']
 
         for row in selected_rows:
-            if isinstance(row, JobRow):
-                # Streams are stored by index in YAML. We need to check their real type.
-                # Usually, it's safer to check the actual file again or use cached info.
-                files = row.job_data["sources"]["files"]
-                streams = row.job_data["sources"]["streams"]
+            if not isinstance(row, JobRow): continue
+            
+            streams = row.job_data["sources"]["streams"]
+            files = row.job_data["sources"]["files"]
 
-                for s_entry in streams:
-                    if s_entry.get("active"):
-                        # Get real stream info to verify type
-                        try:
-                            file_path = files[s_entry["file"]]
-                            info = media_parser.get_info(file_path)
-                            real_stream = info["streams"][s_entry["index"]]
-                            
-                            if real_stream.get("codec_type") == target_type:
-                                s_entry["template"] = template_name
-                        except:
-                            continue
-                
-                row.update_job_data(row.job_data)
+            for s_entry in streams:
+                try:
+                    # Verify stream type before applying
+                    file_path = files[s_entry["file"]]
+                    info = media_parser.get_info(file_path)
+                    if info["streams"][s_entry["index"]].get("codec_type") == target_type:
+                        s_entry["template"] = template_name
+                except:
+                    continue
+            
+            # Refresh the row UI
+            row.update_job_data(row.job_data)
+        
+    def on_clone(self, action, param):
+        """Copies the job data and opens JobSetupWindow in clone mode"""
+        import copy
+        
+        # Get the main window (root) so we can access its methods
+        main_window = self.get_root()
+        if not main_window:
+            return
+
+        # Deep copy the current row's data
+        cloned_data = copy.deepcopy(self.job_data)
+        
+        # Open the setup window in clone mode
+        wnd = JobSetupWindow(
+            parent_window=main_window,
+            mode="clone",
+            job=cloned_data
+        )
+        
+        # This is the crucial callback:
+        # We tell the setup window to send the finished job back to MainWindow
+        wnd.on_job_setup_finished = main_window.add_job_to_list
+        wnd.present()
+
+    def add_cloned_job_to_list(self, final_job_data):
+        """Callback to insert the newly cloned job into the main UI"""
+        # We access the main window's 'add_job' method through the app 
+        # or by looking at the parent's structure.
+        # Assuming your MainWindow has an 'add_job' method:
+        main_window = self.get_root()
+        if hasattr(main_window, "add_job"):
+            main_window.add_job(final_job_data)
+
+    def on_smart_toggle(self, target_type):
+        """
+        Smart toggle logic: 
+        If ANY stream of target_type is currently active in ANY selected row, 
+        disable ALL of them. If NONE are active, enable ALL of them.
+        """
+        listbox = self.get_parent()
+        selected_rows = [row for row in listbox.get_selected_rows() if isinstance(row, JobRow)]
+        media_parser = self.app.parsers['media']
+
+        # Phase 1: Determine the desired state (True/False)
+        any_enabled = False
+        for row in selected_rows:
+            streams = row.job_data["sources"]["streams"]
+            files = row.job_data["sources"]["files"]
+            
+            for s in streams:
+                try:
+                    info = media_parser.get_info(files[s["file"]])
+                    if info["streams"][s["index"]].get("codec_type") == target_type:
+                        if s.get("active", False):
+                            any_enabled = True
+                            break
+                except: continue
+            if any_enabled: break
+
+        # If any were enabled, our action is to DISABLE (False)
+        # If none were enabled, our action is to ENABLE (True)
+        new_state = not any_enabled
+
+        # Phase 2: Apply the state
+        for row in selected_rows:
+            streams = row.job_data["sources"]["streams"]
+            files = row.job_data["sources"]["files"]
+            for s in streams:
+                try:
+                    info = media_parser.get_info(files[s["file"]])
+                    if info["streams"][s["index"]].get("codec_type") == target_type:
+                        s["active"] = new_state
+                except: continue
+            
+            # Update the UI for this specific row
+            row.update_job_data(row.job_data)

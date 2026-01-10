@@ -55,31 +55,51 @@ CONTEXT_MENU_XML = """
 <interface>
   <menu id='context-menu'>
     <section>
-      <item>
-        <attribute name='label'>Setup Job...</attribute>
-        <attribute name='action'>context.job_setup</attribute>
-      </item>
-      <item>
-        <attribute name='label'>Remove Job</attribute>
-        <attribute name='action'>context.remove_job</attribute>
-      </item>
+        <item>
+            <attribute name='label'>Edit Job...</attribute>
+            <attribute name='action'>context.job_setup</attribute>
+        </item>
+        <item>
+            <attribute name='label'>Clone Job...</attribute>
+            <attribute name='action'>context.job_clone</attribute>
+        </item>
+        <item>
+            <attribute name='label'>Remove Job</attribute>
+            <attribute name='action'>context.remove_job</attribute>
+        </item>
     </section>
     <section>
-      <submenu>
-        <attribute name='label'>Batch Apply Template</attribute>
-        <item>
-          <attribute name='label'>Video Streams...</attribute>
-          <attribute name='action'>context.batch_tpl_video</attribute>
-        </item>
-        <item>
-          <attribute name='label'>Audio Streams...</attribute>
-          <attribute name='action'>context.batch_tpl_audio</attribute>
-        </item>
-        <item>
-          <attribute name='label'>Subtitle Streams...</attribute>
-          <attribute name='action'>context.batch_tpl_subtitle</attribute>
-        </item>
-      </submenu>
+        <attribute name='label'>Useful Tools</attribute>
+        <submenu>
+            <attribute name='label'>Stream Toggle</attribute>
+            <item>
+                <attribute name='label'>Toggle All Video Streams</attribute>
+                <attribute name='action'>context.toggle_video</attribute>
+            </item>
+            <item>
+                <attribute name='label'>Toggle All Audio Streams</attribute>
+                <attribute name='action'>context.toggle_audio</attribute>
+            </item>
+            <item>
+                <attribute name='label'>Toggle All Subtitle Streams</attribute>
+                <attribute name='action'>context.toggle_subtitles</attribute>
+            </item>
+        </submenu>
+        <submenu>
+            <attribute name='label'>Batch Apply Template</attribute>
+            <item>
+                <attribute name='label'>Video Streams...</attribute>
+                <attribute name='action'>context.batch_tpl_video</attribute>
+            </item>
+            <item>
+                <attribute name='label'>Audio Streams...</attribute>
+                <attribute name='action'>context.batch_tpl_audio</attribute>
+            </item>
+            <item>
+                <attribute name='label'>Subtitle Streams...</attribute>
+                <attribute name='action'>context.batch_tpl_subtitle</attribute>
+            </item>
+        </submenu>
     </section>
   </menu>
 </interface>
