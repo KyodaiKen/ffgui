@@ -16,13 +16,10 @@ class FFmpegBaseParser(ABC):
         "UINT32_MAX": 4294967295,
         "I64_MIN": -9223372036854775808,
         "I64_MAX": 9223372036854775807,
-        # Use struct to get exact IEEE 754 single-precision (float) limits
         "-FLT_MAX": -struct.unpack('f', b'\xff\xff\x7f\x7f')[0],
         "FLT_MAX": struct.unpack('f', b'\xff\xff\x7f\x7f')[0],
-        # Double precision limits from Python's own float info
         "DBL_MIN": -sys.float_info.max,
         "DBL_MAX": sys.float_info.max,
-        # Common FFmpeg semantic aliases
         "auto": -1,
         "none": 0,
         "disable": 0,
@@ -32,29 +29,17 @@ class FFmpegBaseParser(ABC):
 
     def _to_num(self, val):
         """Converts strings and FFmpeg constants to exact numeric types."""
-        if val is None:
-            return None
-
-        # Standardize for lookup
+        if val is None: return None
         s_val = val.strip()
         lookup = s_val.upper()
-
-        # 1. Resolve Constants
         if lookup in self._NUMERIC_LIMITS:
             return self._NUMERIC_LIMITS[lookup]
-
-        # 2. Try Numeric Conversion
         try:
-            # Handle Hexadecimal
             if s_val.lower().startswith('0x'):
                 return int(s_val, 16)
-
-            # Handle float/int (Scientific notation like 1e+08 is handled by float())
             num = float(s_val)
-            # Return as int if it's a whole number to keep JSON clean (e.g., 5.0 -> 5)
             return int(num) if num.is_integer() else num
         except ValueError:
-            # Fallback for strings that aren't numbers (like 'auto' if not in map)
             return s_val
 
     def __init__(self, ffmpeg_path="ffmpeg", disk_cache_file="ffmpeg_cache.json"):
@@ -66,8 +51,7 @@ class FFmpegBaseParser(ABC):
         try:
             result = subprocess.run(cmd, capture_output=True, text=True, encoding='utf-8', errors='ignore')
             return result.stdout
-        except FileNotFoundError:
-            return ""
+        except FileNotFoundError: return ""
 
     def _get_ffmpeg_version(self):
         output = self._run_cmd(["-version"])
@@ -78,49 +62,28 @@ class FFmpegBaseParser(ABC):
             try:
                 with open(self.disk_cache_file, 'r', encoding='utf-8') as f:
                     return json.load(f)
-            except (json.JSONDecodeError, IOError):
-                return None
+            except (json.JSONDecodeError, IOError): return None
         return None
 
     def _save_cache(self, version_str, data):
-        os.makedirs(os.path.dirname(self.disk_cache_file) or '.', exist_ok=True)
-        payload = {"ffmpeg_version": version_str, "data": data}
-        
-        # We use separators=(',', ':') to remove all whitespace/newlines
-        # We set allow_nan=False to force a ValueError, which we can then handle,
-        # OR more simply, we can preprocess the data to stringify NaNs.
-        
-        def json_fixer(obj):
-            import math
-            if isinstance(obj, float):
-                if math.isnan(obj):
-                    return "NaN"
-                if math.isinf(obj):
-                    return "Infinity" if obj > 0 else "-Infinity"
-            return obj
-
-        # Deep-clean the data for NaN values before dumping
+        """Saves as compact JSON and handles strict NaN compliance."""
         def clean_nan(item):
             import math
-            if isinstance(item, list):
-                return [clean_nan(i) for i in item]
-            elif isinstance(item, dict):
-                return {k: clean_nan(v) for k, v in item.items()}
-            elif isinstance(item, float) and math.isnan(item):
-                return "NaN"
+            if isinstance(item, list): return [clean_nan(i) for i in item]
+            elif isinstance(item, dict): return {k: clean_nan(v) for k, v in item.items()}
+            elif isinstance(item, float) and math.isnan(item): return "NaN"
             return item
 
-        cleaned_payload = clean_nan(payload)
+        os.makedirs(os.path.dirname(self.disk_cache_file) or '.', exist_ok=True)
+        cleaned_payload = clean_nan({"ffmpeg_version": version_str, "data": data})
 
         with open(self.disk_cache_file, 'w', encoding='utf-8') as f:
-            # separators=(',', ':') ensures the most compact representation
+            # separators removes whitespace for minimum file size
             json.dump(cleaned_payload, f, separators=(',', ':'))
 
     def _notify(self, message, callback, end='\n'):
-        if callback:
-            callback(message + end)
-        else:
-            print(f"{message}", end=end, flush=True)
+        if callback: callback(message + end)
+        else: print(f"{message}", end=end, flush=True)
 
     def get_all(self, force_refresh=False, progress_callback=None):
         current_version = self._get_ffmpeg_version()
@@ -132,21 +95,57 @@ class FFmpegBaseParser(ABC):
 
         self._notify(f"Refreshing cache for {self.__class__.__name__}...", progress_callback)
         items = self.parse_list()
-        clear_line = "\033[K"
-
+        
         for i, item in enumerate(items):
-            status = f"  > [{i+1}/{len(items)}] {item['name']}"
-            self._notify(f"\r{status}{clear_line}", progress_callback, end='') # Triggers granular_callback
-
+            self._notify(f"\r  > [{i+1}/{len(items)}] {item['name']}\033[K", progress_callback, end='')
             details = self.parse_details(item['name'])
-            if isinstance(details, dict):
-                item.update(details)
-            else:
-                item['parameters'] = details
+            if isinstance(details, dict): item.update(details)
+            else: item['parameters'] = details
 
         self._notify(f"\nFinished {self.__class__.__name__}. Saving cache.", progress_callback)
         self._save_cache(current_version, items)
         return items
+
+    def _clean_descr(self, raw_descr):
+        min_match = re.search(r"from (.*?) to", raw_descr)
+        max_match = re.search(r"to (.*?)\)", raw_descr)
+        def_match = re.search(r"default (.*?)\)", raw_descr)
+        min_v = self._to_num(min_match.group(1)) if min_match else None
+        max_v = self._to_num(max_match.group(1)) if max_match else None
+        def_v = self._to_num(def_match.group(1)) if def_match else None
+
+        clean = re.sub(r"\(from.*?default.*?\)", "", raw_descr).strip()
+        clean = re.sub(r"^[A-Z]\.\s+", "", clean)
+        clean = re.sub(r"^[EDVASFTR\.]{2,}\s*", "", clean)
+        return {"clean_descr": clean.strip(), "min": min_v, "max": max_v, "default": def_v}
+
+    def _map_flags(self, flag_str):
+        if not flag_str or len(flag_str) < 5: return {}
+        return {
+            "encoding": 'E' in flag_str[0:2],
+            "decoding": 'D' in flag_str[0:2],
+            "filtering": 'F' in flag_str[2] if len(flag_str) > 2 else False,
+            "video": 'V' in flag_str[3] if len(flag_str) > 3 else False,
+            "audio": 'A' in flag_str[4] if len(flag_str) > 4 else False,
+            "timeline": 'T' in flag_str,
+            "runtime": 'R' in flag_str
+        }
+
+    def _create_param_dict(self, name, p_type, flags, parsed, section):
+        f_map = self._map_flags(flags)
+        clean_type = p_type.replace('<', '').replace('>', '')
+        return {
+            "name": name,
+            "section": section,
+            "type": clean_type,
+            "is_flags": clean_type == "flags",
+            "descr": parsed["clean_descr"],
+            "context": f_map,
+            "min": parsed["min"],
+            "max": parsed["max"],
+            "default": parsed["default"],
+            "options": []
+        }
 
     def _clean_descr(self, raw_descr):
         # 1. Extract metadata strings
@@ -210,15 +209,19 @@ class FFmpegBaseParser(ABC):
 
     def _parse_av_options(self, output):
         data = {"parameters": []}
-        param_pattern = re.compile(r"^\s{1,4}-?([\w_-]+)\s+<([^>]+)>\s+([EDVASFTR\.]{5,})\s*(.*)$")
-        option_pattern = re.compile(r"^\s{5,14}([\w_-]+)\s+(-?\d+|0x[\da-fA-F]+)\s+([EDVASFTR\.]{5,})\s*(.*)$")
+        # Param: Matches lines starting with 1-4 spaces and a dash
+        param_pattern = re.compile(r"^\s{1,4}-?([\w:-]+)\s+<([^>]+)>\s+([EDVASFTR\.]{5,})\s*(.*)$")
+        
+        # Option/Choice: Updated to make the numeric value optional
+        # Group 1: Name, Group 2: Potential Value, Group 3: Flags, Group 4: Description
+        option_pattern = re.compile(r"^\s{3,20}([\w_-]+)(?:\s+([-?\w\.]+))?\s+([EDVASFTR\.]{5,})\s*(.*)$")
+        
         section_pattern = re.compile(r"^([\w\s\(2\)]+)\s+AVOptions:$")
 
         current_param = None
         current_section = "General"
 
         for line in output.splitlines():
-            # Track sections (e.g. SWScaler, framesync)
             s_match = section_pattern.match(line)
             if s_match:
                 current_section = s_match.group(1).strip()
@@ -234,10 +237,18 @@ class FFmpegBaseParser(ABC):
 
             o_match = option_pattern.match(line)
             if o_match and current_param:
+                if line.strip().startswith('-'):
+                    continue
+                    
                 opt_name, opt_val, opt_flags, opt_descr = o_match.groups()
+                
+                # If no value was provided in the output (common for flags), 
+                # we default the value to the name or 1
+                final_val = self._to_num(opt_val) if opt_val else opt_name
+
                 current_param["options"].append({
                     "name": opt_name,
-                    "value": self._to_num(opt_val), # Use the numeric converter here!
+                    "value": final_val,
                     "descr": opt_descr.strip(),
                     "context": self._map_flags(opt_flags)
                 })
@@ -280,57 +291,48 @@ class FFmpegGlobalsParser(FFmpegBaseParser):
         params = []
         av_pattern = re.compile(r"^\s{1,4}-([\w:-]+)\s+<([^>]+)>\s+([EDVASFTR\.]{5,})\s*(.*)$")
         std_pattern = re.compile(r"^\s{1,4}-([\w:-]+)\s+([\w\s]+?)\s{2,}(.*)$")
-        opt_pattern = re.compile(r"^\s{5,14}([\w_-]+)\s+(-?\d+|0x[\da-fA-F]+)\s+([EDVASFTR\.]{5,})\s*(.*)$")
+        
+        # Updated for Global Options to match the BaseParser's improved flexibility
+        opt_pattern = re.compile(r"^\s{3,20}([\w_-]+)\s+([-?\w\.]+)\s+([EDVASFTR\.]{5,})\s*(.*)$")
 
         current_header_section = None
         last_param = None
-        processing_av_options = False
 
         for line in self._full_help_output.splitlines():
-            if not line.strip():
-                continue
+            if not line.strip(): continue
 
-            # 1. Section Header Detection
+            # Section Header Detection
             if line.endswith(":") or "AVOptions" in line:
                 header = line.strip().rstrip(":")
-                if processing_av_options and "AVOptions" in line and "AVCodecContext" not in line:
-                    break
-                if "AVCodecContext AVOptions" in line:
-                    processing_av_options = True
-
-                current_header_section = self._header_to_section.get(header, "av_options") if "AVOptions" not in header else "av_options"
+                current_header_section = self._header_to_section.get(header, "av_options")
                 last_param = None
                 continue
 
-            # 2. Parameter Parsing
+            # Parameter Parsing
             av_match = av_pattern.match(line)
             std_match = std_pattern.match(line)
 
-            if av_match or std_match:
-                if av_match:
-                    name, p_type, flags, raw_descr = av_match.groups()
-                    # Determine ALL sections this parameter belongs to
-                    targets = self._determine_target_sections(current_header_section, flags)
-
-                    # Check if the currently requested section is in the list
-                    if section_name in targets:
-                        parsed = self._clean_descr(raw_descr)
-                        last_param = self._create_param_dict(name, p_type, flags, parsed, section_name)
-                        params.append(last_param)
-                    else:
-                        last_param = None
+            if av_match:
+                name, p_type, flags, raw_descr = av_match.groups()
+                if section_name in self._determine_target_sections(current_header_section, flags):
+                    parsed = self._clean_descr(raw_descr)
+                    last_param = self._create_param_dict(name, p_type, flags, parsed, section_name)
+                    params.append(last_param)
                 else:
-                    # Standard parameters (usually from specific headers like 'Video options')
-                    name, p_type, descr = std_match.groups()
-                    if current_header_section == section_name:
-                        parsed = {"clean_descr": descr.strip(), "min": None, "max": None, "default": None}
-                        last_param = self._create_param_dict(name, p_type, ".....", parsed, section_name)
-                        params.append(last_param)
-                    else:
-                        last_param = None
+                    last_param = None
+                continue
+            
+            if std_match:
+                name, p_type, descr = std_match.groups()
+                if current_header_section == section_name:
+                    parsed = {"clean_descr": descr.strip(), "min": None, "max": None, "default": None}
+                    last_param = self._create_param_dict(name, p_type, ".....", parsed, section_name)
+                    params.append(last_param)
+                else:
+                    last_param = None
                 continue
 
-            # 3. Choice/Option Parsing
+            # Choice/Option Parsing for Globals
             opt_match = opt_pattern.match(line)
             if opt_match and last_param:
                 if not line.strip().startswith("-"):
@@ -491,7 +493,6 @@ class FFmpegCodecParser(FFmpegBaseParser):
         return sorted(list(codec_map.values()), key=lambda x: x["name"])
 
     def parse_details(self, item_name):
-        """Probes parameters only for the filtered list of valid handlers."""
         output = self._run_cmd(["-h", f"encoder={item_name}"])
         if "Unknown" in output or not output.strip():
             output = self._run_cmd(["-h", f"decoder={item_name}"])
@@ -499,70 +500,94 @@ class FFmpegCodecParser(FFmpegBaseParser):
         if not output or "Unknown" in output:
             return {"parameters": []}
 
-        return self._parse_av_options(output)
+        data = self._parse_av_options(output)
+
+        # --- Inject missing x26x options from JSON ---
+        try:
+            json_path = os.path.join("codecs", "x26x_missing_parm_opts.json")
+            if os.path.exists(json_path):
+                with open(json_path, 'r', encoding='utf-8') as f:
+                    missing_data = json.load(f)
+                
+                if item_name in missing_data:
+                    overrides = missing_data[item_name]
+                    for param in data.get("parameters", []):
+                        p_name = param["name"]
+                        if p_name in overrides:
+                            for choice in overrides[p_name]:
+                                # Append if choice is not already present
+                                if not any(opt["name"] == choice for opt in param["options"]):
+                                    param["options"].append({
+                                        "name": choice,
+                                        "value": choice,
+                                        "descr": "Injected choice",
+                                        "context": param["context"]
+                                    })
+        except Exception as e:
+            # Optionally log: print(f"Error loading missing options: {e}")
+            pass
+
+        return data
 
 class FFmpegFormatParser(FFmpegBaseParser):
-    def _create_param_dict(self, name, p_type, flags, parsed, section):
-        """Override to only show muxer/demuxer booleans."""
-        base = super()._create_param_dict(name, p_type, flags, parsed, section)
-        for key in ["for_encoder", "for_decoder"]:
-            base.pop(key, None)
-        return base
-
     def parse_list(self):
-        # FIX 1: Run -formats, not -codecs
         output = self._run_cmd(["-formats"])
         formats_map = {}
-
-        # FIX 2: Correct Regex for -formats output
-        # Pattern: [D ][E ] name description
         pattern = re.compile(r"^\s([D\s])([E\s])\s+([\w,]+)\s+(.*)$")
 
         for line in output.splitlines():
             match = pattern.match(line)
             if match:
                 can_demux, can_mux, name_str, descr = match.groups()
-
-                # Formats often have multiple names: "matroska,webm"
                 names = name_str.split(',')
                 primary_id = names[0]
-
                 if primary_id not in formats_map:
-                    formats_map[primary_id] = {
-                        "name": primary_id,
-                        "aliases": names[1:],
-                        "descr": descr.strip(),
-                        "is_demuxer": False,
-                        "is_muxer": False
-                    }
-
-                if can_demux == 'D': formats_map[primary_id]["is_demuxer"] = True
-                if can_mux == 'E':   formats_map[primary_id]["is_muxer"] = True
-
+                    formats_map[primary_id] = {"name": primary_id, "aliases": names[1:], "descr": descr.strip(), "is_demuxer": can_demux == 'D', "is_muxer": can_mux == 'E'}
+                else:
+                    formats_map[primary_id]["is_demuxer"] |= (can_demux == 'D')
+                    formats_map[primary_id]["is_muxer"] |= (can_mux == 'E')
         return list(formats_map.values())
 
     def parse_details(self, item_name):
-        # FIX 3: Details for formats use -h muxer= and -h demuxer=
         final = {"name": item_name, "parameters": [], "extensions": []}
-
-        for cmd_type in ["muxer", "demuxer"]:
-            output = self._run_cmd(["-h", f"{cmd_type}={item_name}"])
-            if not output or "Unknown" in output:
-                continue
-
-            # Extra metadata parsing for formats
-            ext_match = re.search(r"Common extensions: (.*?)\.", output)
+        
+        # 1. Capture and Parse Muxer Help
+        mux_out = self._run_cmd(["-h", f"muxer={item_name}"])
+        # 2. Capture and Parse Demuxer Help
+        demux_out = self._run_cmd(["-h", f"demuxer={item_name}"])
+        
+        # Extract extensions (usually same in both, but check both)
+        for out in [mux_out, demux_out]:
+            ext_match = re.search(r"Common extensions: (.*?)\.", out)
             if ext_match:
                 exts = [e.strip() for e in ext_match.group(1).split(',')]
-                final["extensions"] = list(set(final.get("extensions", []) + exts))
+                for e in exts:
+                    if e not in final["extensions"]:
+                        final["extensions"].append(e)
 
-            res = self._parse_av_options(output)
-            for p in res["parameters"]:
-                # Check for duplicates across muxer/demuxer details
-                existing = next((x for x in final["parameters"] if x["name"] == p["name"]), None)
-                if not existing:
-                    final["parameters"].append(p)
+        # 3. Parse and Merge Parameters
+        mux_res = self._parse_av_options(mux_out)
+        demux_res = self._parse_av_options(demux_out)
+        
+        # Use a dict to de-duplicate parameters by name while merging options
+        merged_params = {}
 
+        for p in mux_res["parameters"] + demux_res["parameters"]:
+            p_name = p["name"]
+            if p_name not in merged_params:
+                merged_params[p_name] = p
+            else:
+                # Merge options if this parameter exists in both (e.g. 'protocol_whitelist')
+                existing_options = {o["name"] for o in merged_params[p_name]["options"]}
+                for new_opt in p["options"]:
+                    if new_opt["name"] not in existing_options:
+                        merged_params[p_name]["options"].append(new_opt)
+                
+                # Update context flags (Muxer might add 'E', Demuxer 'D')
+                for flag, val in p["context"].items():
+                    if val: merged_params[p_name]["context"][flag] = True
+
+        final["parameters"] = list(merged_params.values())
         return final
 
 class FFmpegPixelFormatParser(FFmpegBaseParser):
