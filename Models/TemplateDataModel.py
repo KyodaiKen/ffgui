@@ -3,15 +3,49 @@ import yaml
 import os
 
 class TemplateDataModel:
-    import pathlib
-import yaml
+    @staticmethod
+    def get_template_by_name(app, template_name):
+        """
+        Searches for a template by its filename (stem) and returns a flat 
+        dictionary containing file metadata merged with YAML content.
+        """
+        app_root = pathlib.Path(__file__).parent.parent.resolve() 
+        system_path = (app_root / "templates").resolve()
+        
+        scan_paths = [system_path]
+        if hasattr(app, 'templates_dir') and app.templates_dir:
+            scan_paths.append(pathlib.Path(app.templates_dir).resolve())
 
-class TemplateDataModel:
-    import pathlib
-import yaml
-import os
+        # 1. Direct File Lookup (Optimized)
+        for base_path in scan_paths:
+            potential_file = base_path / f"{template_name}.yaml"
+            if potential_file.exists():
+                try:
+                    with open(potential_file, 'r') as f:
+                        yaml_content = yaml.safe_load(f)
+                        if yaml_content:
+                            # Create the flat structure
+                            res = {
+                                "name": potential_file.stem,
+                                "path": str(potential_file.resolve()),
+                                "origin": "System" if potential_file.is_relative_to(app_root) else "User"
+                            }
+                            # Merge YAML (type, codec, parameters, filters) into top level
+                            res.update(yaml_content)
+                            return res
+                except Exception as e:
+                    print(f"Error reading template {template_name}: {e}")
+                    continue
 
-class TemplateDataModel:
+        # 2. Fallback: Scan (Handles case-sensitivity or symlinks)
+        all_templates = TemplateDataModel.get_all_templates(app)
+        for t in all_templates:
+            if t['name'] == template_name:
+                # all_templates is already flat, return as-is
+                return t
+
+        return None
+
     @staticmethod
     def get_all_templates(app):
         # 1. Define the Application Root (where the script is)
@@ -43,14 +77,22 @@ class TemplateDataModel:
                             is_inside_app = file.resolve().is_relative_to(app_root)
                             final_origin = "System" if is_inside_app else origin_label
 
-                            found.append({
+                            # Replace the old found.append with this:
+                            template_entry = {
                                 "name": file.stem, 
                                 "path": str(file.resolve()),
-                                "type": str(data.get("type", "unknown")).upper(),
                                 "origin": final_origin,
-                                "data": data,
                                 "readonly": not os.access(file, os.W_OK)
-                            })
+                            }
+
+                            # Merge the YAML content (data) directly into the entry
+                            # This puts 'type', 'codec', 'parameters', and 'filters' at the top level
+                            template_entry.update(data)
+
+                            # Ensure 'type' is uppercase for the sorting logic in the model
+                            template_entry["type"] = str(template_entry.get("type", "unknown")).upper()
+
+                            found.append(template_entry)
                     except: continue
         
         return sorted(found, key=lambda x: (x['type'], x['name'].lower()))

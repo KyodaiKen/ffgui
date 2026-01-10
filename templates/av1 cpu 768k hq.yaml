@@ -3,7 +3,7 @@ codec: libsvtav1
 parameters:
     options:
         b: 768000
-        preset: 5
+        preset: 1
 filters:
     mode: simple
     entries: []
