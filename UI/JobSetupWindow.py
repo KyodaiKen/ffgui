@@ -42,6 +42,8 @@ class JobSetupWindow(Gtk.ApplicationWindow):
             self.load_job_into_ui()
             if mode == "clone":
                 self.show_clone_warning()
+        else:
+            self.is_loading = False
 
     def setup_ui(self):
         """Standard UI Setup (Grid, Lists, Buttons)"""
@@ -519,19 +521,21 @@ class JobSetupWindow(Gtk.ApplicationWindow):
             adj.set_value(y)
 
     def sync_data_model(self):
-        """Rebuild the list based on the current UI order"""
-        if hasattr(self, 'is_loading') and self.is_loading:
-            return
-        
-        self.source_paths = []
+        """Updates the internal path list from the UI order."""
+        new_paths = []
         row = self.lst_source_files.get_first_child()
         while row:
             label = row.get_child()
-            # We use the tooltip or a custom attribute to store the REAL path
             full_path = label.get_tooltip_text() 
-            self.source_paths.append(full_path)
+            if full_path:
+                new_paths.append(full_path)
             row = row.get_next_sibling()
-        self.get_sources()
+        
+        self.source_paths = new_paths
+
+        # Only trigger the heavy UI rebuild if we aren't mid-initialization
+        if not self.is_loading:
+            self.get_sources()
 
     def add_file_to_list(self, file):
         """Adds file to top list and sets initial defaults."""
@@ -572,6 +576,7 @@ class JobSetupWindow(Gtk.ApplicationWindow):
             if info.get_file_type() != Gio.FileType.DIRECTORY:
                 self.add_file_to_list(file)
 
+        self.is_loading = False
         self.sync_data_model()
         return True
     

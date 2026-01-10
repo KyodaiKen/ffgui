@@ -89,7 +89,17 @@ class TemplateDataModel:
     def create_empty_template(stream_type="video"):
         """Returns structure containing only transcoding parameters."""
         return {
-            "type": stream_type,
-            "codec": "libx264" if stream_type == "video" else "aac",
-            "parameters": {"options": {}}
+            "name": "New Template",
+            "type": "video",
+            "codec": "libx264",
+            "parameters": {
+                "options": {
+                    "b": "6000k",
+                    "preset": "medium"
+                }
+            },
+            "filters": {
+                "mode": "simple",
+                "entries": []
+            }
         }

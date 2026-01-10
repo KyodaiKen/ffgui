@@ -22,7 +22,7 @@ class TemplateEditorWindow(Gtk.ApplicationWindow):
 
         # Template Setup
         self.template = self._prepare_template_data(template)
-        self.selected_codec = self.template['data']['codec']
+        self.selected_codec = self.template.get('codec', 'libx264')
 
         # Window Configuration
         self.set_default_size(1024, 700)
@@ -42,13 +42,21 @@ class TemplateEditorWindow(Gtk.ApplicationWindow):
 
     def _prepare_template_data(self, template):
         if template:
+            # If the template comes from the model with a 'data' wrapper, flatten it
+            if "data" in template:
+                flat = copy.deepcopy(template["data"])
+                flat["name"] = template.get("name", "")
+                flat["path"] = template.get("path", "")
+                return flat
             return copy.deepcopy(template)
+            
+        # Default structure for a brand new template (Matches your YAML)
         return {
-            "name": "", "path": "", "origin": "System",
-            "data": {
-                "type": "video", "codec": "libx264",
-                "parameters": {"options": {}}
-            }
+            "name": "", 
+            "type": "video", 
+            "codec": "libx264",
+            "parameters": {"options": {}},
+            "filters": {"mode": "simple", "entries": []}
         }
 
     def _build_ui(self):
@@ -347,51 +355,42 @@ class TemplateEditorWindow(Gtk.ApplicationWindow):
         CodecPickerWindow(parent_window=self, codec_type=self.get_selected_type(), on_select=lambda c: (setattr(self, 'selected_codec', c), self.update_codec_ui())).present()
 
     def on_type_changed(self, *args):
-        self.template['data']['type'] = self.get_selected_type()
+        self.template['type'] = self.get_selected_type()
 
     def get_selected_type(self):
         return self.all_types[self.combo_type.get_selected()]
 
     def load_structured_template(self, template):
-        # 1. Name comes from the filename (stem) passed by the model
+        # 1. Handle Name
         name = template.get('name', '')
         self.entry_name.set_text(name)
 
-        # Lock name if we are editing an existing template (not cloning)
         if name and not self.clone_mode:
             self.entry_name.set_editable(False)
             self.entry_name.set_can_focus(False)
 
-        # 2. Extract technical data (the actual YAML content)
-        # If 'data' key exists (from model), use it; otherwise assume top-level
-        data = template.get('data', template)
-        
-        self.selected_codec = data.get('codec', 'libx264')
+        # 2. Data is now guaranteed to be flat thanks to _prepare_template_data
+        self.selected_codec = template.get('codec', 'libx264')
 
         # 3. Update Type Dropdown
-        target_type = self.locked_type or data.get('type', 'video')
+        target_type = self.locked_type or template.get('type', 'video')
         try:
-            # Match the case-insensitive type string to our internal list
             idx = [t.lower() for t in self.all_types].index(target_type.lower())
             self.combo_type.set_selected(idx)
         except (ValueError, AttributeError):
             pass
 
-        # 4. Load Filter Mode if widget exists
+        # 4. Filter Mode
         if hasattr(self, 'combo_filter_mode'):
-            f_data = data.get('filters', {})
-            f_mode = f_data.get('mode', 'simple').capitalize()
-            # Find index in ["Simple", "Complex"]
-            for i in range(2):
-                if self.combo_filter_mode.get_model().get_string(i) == f_mode:
-                    self.combo_filter_mode.set_selected(i)
-                    break
+            f_data = template.get('filters', {})
+            f_mode = f_data.get('mode', 'simple').lower()
+            # Match "simple" or "complex" to the dropdown index
+            self.combo_filter_mode.set_selected(1 if f_mode == "complex" else 0)
 
         # 5. Clear and Add Encoder rows
-        while child := self.lst_encoder.get_first_child():
-            self.lst_encoder.remove(child)
+        self.lst_encoder.remove_all() # GTK4 convenience method
             
-        params = data.get('parameters', {}).get('options', {})
+        params = template.get('parameters', {}).get('options', {})
         for k, v in params.items():
             self.add_row_to_list(self.lst_encoder, k, v)
 
