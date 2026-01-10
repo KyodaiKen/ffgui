@@ -1,4 +1,6 @@
 import gi
+
+from UI.FilterGraphEditorWindow import FilterGraphEditorWindow
 gi.require_version("Gdk", "4.0")
 from gi.repository import Gtk, Gdk, Pango
 from Models.TemplateDataModel import TemplateDataModel
@@ -133,26 +135,59 @@ class TemplateEditorWindow(Gtk.ApplicationWindow):
         header = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL)
         header.append(Gtk.Label(label=f"<b>{title}</b>", use_markup=True, xalign=0, hexpand=True))
 
-        btn_add = Gtk.Button(icon_name="list-add-symbolic")
-        btn_add.add_css_class("flat")
-        btn_add.connect("clicked", add_callback)
-        header.append(btn_add)
-        box.append(header)
-
         if is_filter:
+            self.btn_add_filter = Gtk.Button(icon_name="list-add-symbolic")
+            self.btn_add_filter.add_css_class("flat")
+            self.btn_add_filter.connect("clicked", add_callback)
+            header.append(self.btn_add_filter)
+            box.append(header)
+
             mode_hbox = Gtk.Box(spacing=6)
             mode_hbox.append(Gtk.Label(label="Mode:"))
             self.combo_filter_mode = Gtk.DropDown.new_from_strings(["Simple", "Complex"])
+            self.combo_filter_mode.connect("notify::selected", self.on_filter_mode_changed)
             mode_hbox.append(self.combo_filter_mode)
             box.append(mode_hbox)
 
-        # Corrected ScrolledWindow and ListBox initialization
+            # The Stack allows us to swap the UI content
+            self.filter_stack = Gtk.Stack()
+            self.filter_stack.set_transition_type(Gtk.StackTransitionType.CROSSFADE)
+            
+            # Page 1: Simple List
+            scroll = Gtk.ScrolledWindow(vexpand=True)
+            self.lst_filters = Gtk.ListBox()
+            self.lst_filters.add_css_class("boxed-list")
+            scroll.set_child(self.lst_filters)
+            self.filter_stack.add_named(scroll, "simple")
+
+            # Page 2: Complex Graph Preview
+            graph_preview_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=10, vexpand=True)
+            graph_preview_box.add_css_class("graph-preview-area")
+            
+            self.graph_preview_img = Gtk.Image(icon_name="network-transmit-receive-symbolic", pixel_size=128, vexpand=True)
+            graph_preview_box.append(self.graph_preview_img)
+            
+            btn_edit_graph = Gtk.Button(label="Edit Filter Graph")
+            btn_edit_graph.add_css_class("pill")
+            btn_edit_graph.connect("clicked", self.on_edit_graph_clicked)
+            graph_preview_box.append(btn_edit_graph)
+            
+            self.filter_stack.add_named(graph_preview_box, "complex")
+            
+            box.append(self.filter_stack)
+            container.append(box)
+            return self.lst_filters
+        else:
+            self.btn_add_eo = Gtk.Button(icon_name="list-add-symbolic")
+            self.btn_add_eo.add_css_class("flat")
+            self.btn_add_eo.connect("clicked", add_callback)
+            header.append(self.btn_add_eo)
+            box.append(header)
+
+        # Standard non-filter column logic
         scroll = Gtk.ScrolledWindow(vexpand=True)
         lst = Gtk.ListBox()
         lst.add_css_class("boxed-list")
-        lst.set_name("template-editor-column")
-        lst.set_selection_mode(Gtk.SelectionMode.NONE)
-
         scroll.set_child(lst)
         box.append(scroll)
         container.append(box)
@@ -505,6 +540,19 @@ class TemplateEditorWindow(Gtk.ApplicationWindow):
             return "+".join(active)
 
         return ""
+
+    def on_filter_mode_changed(self, combo, _):
+        mode = "complex" if combo.get_selected() == 1 else "simple"
+        self.filter_stack.set_visible_child_name(mode)
+        if mode == "complex":
+            self.btn_add_filter.set_visible(False)
+        else:
+            self.btn_add_filter.set_visible(True)
+
+    def on_edit_graph_clicked(self, _):
+        # We pass the current template data to the graph editor
+        editor = FilterGraphEditorWindow(self, self.template.get('filters', {}))
+        editor.present()
 
     def on_add_filter(self, _):
         def on_filter_selected(filter_obj):
