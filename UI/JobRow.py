@@ -54,11 +54,11 @@ class JobRow(Gtk.ListBoxRow):
 
         add_act("toggle_video", lambda a, p: self.on_smart_toggle("video"))
         add_act("toggle_audio", lambda a, p: self.on_smart_toggle("audio"))
-        add_act("toggle_subtitles", lambda a, p: self.on_smart_toggle("subtitle"))
+        add_act("toggle_subtitles", lambda a, p: self.on_smart_toggle("subtitles"))
 
         add_act("batch_tpl_video", lambda a, p: self.on_batch_template("video"))
         add_act("batch_tpl_audio", lambda a, p: self.on_batch_template("audio"))
-        add_act("batch_tpl_subtitle", lambda a, p: self.on_batch_template("subtitle"))
+        add_act("batch_tpl_subtitle", lambda a, p: self.on_batch_template("subtitles"))
         
         self.insert_action_group("context", action_group)
 
@@ -166,29 +166,20 @@ class JobRow(Gtk.ListBoxRow):
         picker.present()
 
     def _apply_batch_template_to_selected(self, template_name):
-        """Applies a template to all relevant streams in ALL selected jobs."""
+        """Applies a template to all relevant streams in ALL selected jobs without re-probing."""
         target_type = self._current_batch_type
         listbox = self.get_parent()
-        selected_rows = listbox.get_selected_rows()
-        media_parser = self.app.parsers['media']
+        selected_rows = [row for row in listbox.get_selected_rows() if isinstance(row, JobRow)]
 
         for row in selected_rows:
-            if not isinstance(row, JobRow): continue
-            
             streams = row.job_data["sources"]["streams"]
-            files = row.job_data["sources"]["files"]
-
-            for s_entry in streams:
-                try:
-                    # Verify stream type before applying
-                    file_path = files[s_entry["file"]]
-                    info = media_parser.get_info(file_path)
-                    if info["streams"][s_entry["index"]].get("codec_type") == target_type:
-                        s_entry["template"] = template_name
-                except:
-                    continue
             
-            # Refresh the row UI
+            for s_entry in streams:
+                # We check the 'type' which was saved during the initial probe/import
+                if s_entry.get("type") == target_type:
+                    s_entry["template"] = template_name
+            
+            # Refresh UI (This is now instant)
             row.update_job_data(row.job_data)
         
     def on_clone(self, action, param):
@@ -225,45 +216,31 @@ class JobRow(Gtk.ListBoxRow):
             main_window.add_job(final_job_data)
 
     def on_smart_toggle(self, target_type):
-        """
-        Smart toggle logic: 
-        If ANY stream of target_type is currently active in ANY selected row, 
-        disable ALL of them. If NONE are active, enable ALL of them.
-        """
+        """Toggle streams using cached data with a fallback check."""
         listbox = self.get_parent()
         selected_rows = [row for row in listbox.get_selected_rows() if isinstance(row, JobRow)]
-        media_parser = self.app.parsers['media']
 
-        # Phase 1: Determine the desired state (True/False)
+        # Phase 1: Determine the new state
         any_enabled = False
         for row in selected_rows:
-            streams = row.job_data["sources"]["streams"]
-            files = row.job_data["sources"]["files"]
-            
+            streams = row.job_data.get("sources", {}).get("streams", [])
             for s in streams:
-                try:
-                    info = media_parser.get_info(files[s["file"]])
-                    if info["streams"][s["index"]].get("codec_type") == target_type:
-                        if s.get("active", False):
-                            any_enabled = True
-                            break
-                except: continue
+                # Fallback: if 'type' is missing, we can't toggle safely without re-probing
+                # but for now, we just skip it to avoid crashes.
+                if s.get("type") == target_type and s.get("active"):
+                    any_enabled = True
+                    break
             if any_enabled: break
 
-        # If any were enabled, our action is to DISABLE (False)
-        # If none were enabled, our action is to ENABLE (True)
         new_state = not any_enabled
+        print(f"Smart Toggle [{target_type}]: Setting active to {new_state}")
 
         # Phase 2: Apply the state
         for row in selected_rows:
-            streams = row.job_data["sources"]["streams"]
-            files = row.job_data["sources"]["files"]
+            streams = row.job_data.get("sources", {}).get("streams", [])
             for s in streams:
-                try:
-                    info = media_parser.get_info(files[s["file"]])
-                    if info["streams"][s["index"]].get("codec_type") == target_type:
-                        s["active"] = new_state
-                except: continue
+                if s.get("type") == target_type:
+                    s["active"] = new_state
             
-            # Update the UI for this specific row
+            # This triggers the UI refresh (count labels)
             row.update_job_data(row.job_data)

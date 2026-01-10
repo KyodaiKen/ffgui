@@ -345,27 +345,62 @@ class FFmpegGlobalsParser(FFmpegBaseParser):
         return {"parameters": params}
 
 class FFmpegFilterParser(FFmpegBaseParser):
+    def __init__(self, ffmpeg_path="ffmpeg", disk_cache_file="ffmpeg_cache.json"):
+        super().__init__(ffmpeg_path, disk_cache_file)
+        self._filter_io_map = {}
+        self._current_filter_name = None
+
+    def _map_io_types(self, io_part):
+        """Maps FFmpeg IO characters to descriptive strings."""
+        mapping = {'V': 'video', 'A': 'audio', 'N': 'dynamic'}
+        return [mapping[c] for c in io_part if c in mapping]
+
     def _create_param_dict(self, name, p_type, flags, parsed, section):
-            """Override to remove muxer/encoder booleans for filters."""
-            base = super()._create_param_dict(name, p_type, flags, parsed, section)
-            # Remove keys not relevant to filters
-            for key in ["for_muxer", "for_demuxer", "for_encoder", "for_decoder"]:
-                base.pop(key, None)
-            return base
+        base = super()._create_param_dict(name, p_type, flags, parsed, section)
+        
+        # Remove keys not relevant to filters
+        for key in ["for_muxer", "for_demuxer", "for_encoder", "for_decoder"]:
+            base.pop(key, None)
+
+        # Inject IO info and the is_complex flag into the parameter context
+        io_info = self._filter_io_map.get(self._current_filter_name, {"inputs": [], "outputs": [], "is_complex": False})
+        base["context"]["inputs"] = io_info["inputs"]
+        base["context"]["outputs"] = io_info["outputs"]
+        base["context"]["is_complex"] = io_info["is_complex"]
+        
+        return base
 
     def parse_list(self):
         output = self._run_cmd(["-filters"])
         filters = []
-        # [T.S.C] name description
         pattern = re.compile(r"^\s([T.][S.][C.])\s+([\w]+)\s+([AVN|]*->[AVN|]*)\s+(.*)$")
+        
         for line in output.splitlines():
             match = pattern.match(line)
             if match:
-                flags_raw, name, io_map, descr = match.groups()
+                flags_raw, name, io_str, descr = match.groups()
+                
+                in_part, out_part = io_str.split('->')
+                inputs = self._map_io_types(in_part)
+                outputs = self._map_io_types(out_part)
+                
+                # Logic for is_complex: 
+                # True if multiple inputs, multiple outputs, or dynamic 'N'
+                is_complex = len(inputs) > 1 or len(outputs) > 1 or "N" in io_str
+
+                self._filter_io_map[name] = {
+                    "inputs": inputs,
+                    "outputs": outputs,
+                    "is_complex": is_complex
+                }
+
                 filters.append({
                     "name": name,
                     "descr": descr.strip(),
-                    "is_dynamic": "dynamic" in io_map,
+                    "is_dynamic": "N" in io_str,
+                    "is_complex": is_complex,
+                    "inputs": inputs,
+                    "outputs": outputs,
                     "flags": {
                         "timeline": flags_raw[0] == 'T',
                         "slice_threading": flags_raw[1] == 'S',
@@ -375,6 +410,7 @@ class FFmpegFilterParser(FFmpegBaseParser):
         return filters
 
     def parse_details(self, item_name):
+        self._current_filter_name = item_name
         output = self._run_cmd(["-h", f"filter={item_name}"])
         header_match = re.search(r"Filter\s+([\w_-]+)", output)
         data = self._parse_av_options(output)

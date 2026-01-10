@@ -4,6 +4,8 @@ from gi.repository import Gtk, Gdk, Pango
 from Models.TemplateDataModel import TemplateDataModel
 from UI.CodecPickerWindow import CodecPickerWindow
 from UI.EncoderParameterPickerWindow import EncoderParameterPickerWindow
+from UI.FilterPickerWindow import FilterPickerWindow
+from UI.FilterParameterWindow import FilterParameterWindow
 from UI.Core import UICore
 import copy
 import yaml
@@ -362,9 +364,13 @@ class TemplateEditorWindow(Gtk.ApplicationWindow):
         name = template.get('name', '')
         self.entry_name.set_text(name)
 
-        if name and not self.clone_mode:
+        if name != "New Template" and not self.clone_mode:
             self.entry_name.set_editable(False)
             self.entry_name.set_can_focus(False)
+        else:
+            # Ensure it is explicitly enabled for new/cloned templates
+            self.entry_name.set_editable(True)
+            self.entry_name.set_can_focus(True)
 
         # 2. Data is now guaranteed to be flat thanks to _prepare_template_data
         self.selected_codec = template.get('codec', 'libx264')
@@ -391,6 +397,19 @@ class TemplateEditorWindow(Gtk.ApplicationWindow):
         for k, v in params.items():
             self.add_row_to_list(self.lst_encoder, k, v)
 
+        # 6. Load Filter rows
+        self.lst_filters.remove_all()
+        f_entries = template.get('filters', {}).get('entries', [])
+        all_ffmpeg_filters = getattr(self.app, 'ffmpeg_data', {}).get('filters', [])
+        
+        for entry in f_entries:
+            name = entry.get('name')
+            params = entry.get('params', {})
+            # Find the full filter schema from ffmpeg_data
+            f_obj = next((f for f in all_ffmpeg_filters if f['name'] == name), None)
+            if f_obj:
+                self.add_filter_row(f_obj, params)
+
     def show_error_dialog(self, message):
         """Standard GTK4 Message Dialog helper."""
         dialog = Gtk.AlertDialog(message=message)
@@ -416,6 +435,17 @@ class TemplateEditorWindow(Gtk.ApplicationWindow):
             return
 
         options = self._get_options_from_rows()
+
+        # Gather filters
+        filter_entries = []
+        f_row = self.lst_filters.get_first_child()
+        while f_row:
+            if hasattr(f_row, "_filter_obj"):
+                filter_entries.append({
+                    "name": f_row._filter_obj['name'],
+                    "params": f_row._filter_params
+                })
+            f_row = f_row.get_next_sibling()
         
         # Construct technical data
         yaml_data = {
@@ -424,7 +454,7 @@ class TemplateEditorWindow(Gtk.ApplicationWindow):
             "parameters": {"options": options},
             "filters": {
                 "mode": self.combo_filter_mode.get_selected_item().get_string().lower() if hasattr(self, 'combo_filter_mode') else "simple",
-                "entries": []
+                "entries": filter_entries
             }
         }
 
@@ -476,4 +506,60 @@ class TemplateEditorWindow(Gtk.ApplicationWindow):
 
         return ""
 
-    def on_add_filter(self, _): pass
+    def on_add_filter(self, _):
+        def on_filter_selected(filter_obj):
+            # Immediately open the parameter config for the chosen filter
+            self.open_filter_config(filter_obj, {})
+
+        picker = FilterPickerWindow(self, self.get_selected_type(), on_filter_selected)
+        picker.present()
+
+    def open_filter_config(self, filter_obj, current_params, existing_row=None):
+        def on_params_saved(new_params):
+            if existing_row:
+                # Update existing data
+                existing_row._filter_params = new_params
+                self._update_filter_row_label(existing_row)
+            else:
+                # Add as new row
+                self.add_filter_row(filter_obj, new_params)
+
+        editor = FilterParameterWindow(self, filter_obj, current_params, on_params_saved)
+        editor.present()
+
+    def add_filter_row(self, filter_obj, params):
+        row_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=8)
+        
+        # Label showing filter name and summary
+        lbl_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, hexpand=True)
+        name_lbl = Gtk.Label(label=f"<b>{filter_obj['name']}</b>", use_markup=True, xalign=0)
+        lbl_box.append(name_lbl)
+        
+        row = Gtk.ListBoxRow(child=row_box)
+        row._filter_obj = filter_obj
+        row._filter_params = params
+        
+        # Summary label for params
+        row._summary_lbl = Gtk.Label(xalign=0, ellipsize=Pango.EllipsizeMode.END)
+        row._summary_lbl.add_css_class("dim-label")
+        lbl_box.append(row._summary_lbl)
+        row_box.append(lbl_box)
+
+        # Config Button
+        btn_cfg = Gtk.Button(icon_name="emblem-system-symbolic")
+        btn_cfg.connect("clicked", lambda _: self.open_filter_config(row._filter_obj, row._filter_params, row))
+        
+        # Delete Button
+        btn_del = Gtk.Button(icon_name="user-trash-symbolic")
+        btn_del.connect("clicked", lambda _: self.lst_filters.remove(row))
+
+        row_box.append(btn_cfg)
+        row_box.append(btn_del)
+        
+        self._update_filter_row_label(row)
+        self.lst_filters.append(row)
+
+    def _update_filter_row_label(self, row):
+        """Creates a string like 'w=1280:h=720' for the UI summary."""
+        summary = ":".join([f"{k}={v}" for k, v in row._filter_params.items()])
+        row._summary_lbl.set_text(summary or "(no parameters)")

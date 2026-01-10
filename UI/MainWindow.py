@@ -336,11 +336,14 @@ class MainWindow(Gtk.ApplicationWindow):
             job["output"]["container"] = "auto"
             
             for idx, stream in enumerate(info.get('streams', [])):
-                stype = stream.get('codec_type', 'data').capitalize()
+                stype = stream.get('codec_type', 'data').lower() # Ensure lowercase
+                
                 job["sources"]["streams"].append({
-                    "file": 0, "index": idx,
-                    "active": stype.lower() in ['video', 'audio'],
-                    "template": f"Copy {stype}",
+                    "file": 0, 
+                    "index": idx,
+                    "type": stype, # This MUST exist for the toggle to find it
+                    "active": stype in ['video', 'audio'],
+                    "template": f"Copy {stype.capitalize()}",
                     "disposition": [],
                     "language": stream.get('tags', {}).get('language', '')
                 })

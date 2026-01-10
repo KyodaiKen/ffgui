@@ -92,12 +92,7 @@ class TemplateDataModel:
             "name": "New Template",
             "type": "video",
             "codec": "libx264",
-            "parameters": {
-                "options": {
-                    "b": "6000k",
-                    "preset": "medium"
-                }
-            },
+            "parameters": {},
             "filters": {
                 "mode": "simple",
                 "entries": []
