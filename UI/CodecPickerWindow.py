@@ -1,7 +1,6 @@
 import gi
 gi.require_version("Gtk", "4.0")
 from gi.repository import Gtk, Pango
-import av.codec
 
 class CodecPickerWindow(Gtk.ApplicationWindow):
     def __init__(self, parent_window, codec_type, on_select, **kwargs):

@@ -6,7 +6,6 @@ from UI.ContainerPickerWindow import ContainerPickerWindow
 from UI.MetadataManagerWindow import MetadataManagerWindow
 from Models.JobsDataModel import JobsDataModel
 from Core.Utils import format_duration, get_file_title
-import av
 
 class JobSetupWindow(Gtk.ApplicationWindow):
     def __init__(self, parent_window, mode="create", job=None, **kwargs):

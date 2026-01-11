@@ -1,6 +1,6 @@
 import gi
 gi.require_version("Gtk", "4.0")
-from gi.repository import Gtk, Gdk, Graphene, Pango
+from gi.repository import Gtk, Gdk, Pango
 
 class FilterGraphEditorWindow(Gtk.ApplicationWindow):
     def __init__(self, parent_window, filter_data):

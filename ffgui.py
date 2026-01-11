@@ -1,13 +1,32 @@
-import gi
-import re
 import os
+import sys
+
+if getattr(sys, 'frozen', False):
+    # In der EXE liegen alle DLLs direkt in base_path oder _internal
+    base_path = sys._MEIPASS
+    # Für PyInstaller 6.x liegen DLLs oft in _internal
+    internal_path = os.path.join(base_path, "_internal")
+
+    for p in [base_path, internal_path]:
+        if os.path.exists(p):
+            os.environ['PATH'] = p + os.pathsep + os.environ['PATH']
+            if hasattr(os, 'add_dll_directory'):
+                os.add_dll_directory(p)
+else:
+    # Skript-Modus
+    base_path = os.path.dirname(sys.executable)
+
+import gi
+gi.require_version('Gtk', '4.0')
+from gi.repository import GLib, Gtk, Gdk
+gi.require_version('Gtk', '4.0')
+from gi.repository import GLib, Gtk, Gdk
+
+from gi.repository import GLib, Gtk, Gdk, Pango
+from pathlib import Path
+import re
 import threading
 import platform
-from pathlib import Path
-
-gi.require_version("Gdk", "4.0")
-gi.require_version("Gtk", "4.0")
-from gi.repository import GLib, Gtk, Gdk
 
 from UI.MainWindow import MainWindow
 from Core.FFmpegParsers import (
@@ -31,7 +50,6 @@ class FFGuiApp(Gtk.Application):
     
         self.resolve_paths()
         self.setup_ffmpeg_execs()
-        self._load_global_css()
 
         # Initialize Parsers
         self.parsers = {
@@ -176,6 +194,7 @@ class FFGuiApp(Gtk.Application):
 
     def do_startup(self):
         Gtk.Application.do_startup(self)
+        self._load_global_css()
         self.show_init_progress()
 
     def show_init_progress(self):
@@ -208,10 +227,16 @@ class FFGuiApp(Gtk.Application):
         vbox.append(btn_cancel)
 
         self.progress_win.set_child(vbox)
+        GLib.idle_add(self._force_focus_progress)
         self.progress_win.present()
 
         thread = threading.Thread(target=self.run_introspection, daemon=True)
         thread.start()
+
+    def _force_focus_progress(self):
+        if self.progress_win:
+            self.progress_win.present()
+        return False # Only run once
 
     def on_window_close_request(self, window):
         self.on_cancel_request()

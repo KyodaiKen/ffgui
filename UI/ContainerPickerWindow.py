@@ -1,7 +1,6 @@
 import gi
 gi.require_version("Gtk", "4.0")
 from gi.repository import Gtk, Gdk, Pango
-import av.format
 
 class ContainerPickerWindow(Gtk.ApplicationWindow):
     def __init__(self, parent_window, current_val, on_select, **kwargs):
@@ -18,7 +17,7 @@ class ContainerPickerWindow(Gtk.ApplicationWindow):
         self.set_transient_for(parent_window)
         self.set_modal(True)
 
-        self.required_codecs = self.get_active_codecs(parent_window)
+        self.active_types = self.get_active_stream_types()
         
         # 1. Search Header
         hb = Gtk.HeaderBar()
@@ -51,43 +50,32 @@ class ContainerPickerWindow(Gtk.ApplicationWindow):
         main_box.append(self.btn_select)
 
         # 3. Data Population
-        self.formats = []
-        for name in sorted(av.format.formats_available):
-            fmt = av.format.ContainerFormat(name)
-            if fmt.is_output:
-                self.formats.append({"id": name, "long": fmt.long_name})
-
         self.populate_list()
         self.search_entry.grab_focus()
 
-    def get_active_codecs(self, parent):
-        """Identifies which codecs are currently selected for output."""
-        active_codecs = set()
-        row = parent.lst_source_streams.get_first_child()
-        while row:
-            if hasattr(row, 'chk') and row.chk.get_active():
-                # We need the codec name from the stream data
-                key = (row.source_path, row.stream_index)
-                stream_data = parent.selected_streams.get(key)
-                if stream_data:
-                    # Logic here depends on if user is 'copying' or 'encoding'
-                    # For now, we'll assume we check against the source codec
-                    pass
-            row = row.get_next_sibling()
-        return active_codecs
-
     def get_active_stream_types(self):
-        """Helper to find what types of streams are checked in the parent UI."""
+        """Finds what types of streams (video, audio, subtitle) are checked 'active'."""
         types = set()
         parent = self.get_transient_for()
-        if hasattr(parent, 'lst_source_streams'):
-            row = parent.lst_source_streams.get_first_child()
-            while row:
-                if hasattr(row, 'chk') and row.chk.get_active():
-                    # Get type from the SourceStreamRow attribute
-                    types.add(row.stream_type)
-                row = row.get_next_sibling()
+        # Access the stream selection dictionary from JobSetupWindow
+        if hasattr(parent, 'selected_streams'):
+            for stream_key, settings in parent.selected_streams.items():
+                if settings.get("active"):
+                    # We need the type. SourceStreamRow usually stores this.
+                    # If not available directly in settings, we infer from parent rows.
+                    row = self._find_row_by_key(parent, stream_key)
+                    if row and hasattr(row, 'stream_type'):
+                        types.add(row.stream_type.lower())
         return types
+
+    def _find_row_by_key(self, parent, key):
+        """Helper to find the specific SourceStreamRow in the parent's list."""
+        child = parent.lst_source_streams.get_first_child()
+        while child:
+            if hasattr(child, 'source_path') and (child.source_path, child.stream_index) == key:
+                return child
+            child = child.get_next_sibling()
+        return None
 
     def populate_list(self, filter_text=""):
         while child := self.lst_formats.get_first_child():
@@ -95,23 +83,54 @@ class ContainerPickerWindow(Gtk.ApplicationWindow):
 
         search = filter_text.lower()
 
-        # --- ALWAYS add "auto" first ---
+        # Add "auto" option
         if not search or "auto" in search:
             self.add_format_row("auto", "Automatic (Inferred from extension)")
 
-        # Access the raw list from the formats.json cache
-        formats_list = self.app.ffmpeg_data.get('formats', [])
+        # Access cached ffmpeg data
+        formats_list = getattr(self.app, 'ffmpeg_data', {}).get('formats', [])
 
         for fmt in formats_list:
-            if not fmt.get('is_muxer'): continue
+            # 1. Filter: Must be a muxer (output)
+            if not fmt.get('is_muxer'):
+                continue
 
+            # 2. Filter: Search string
             name = fmt.get('name', '')
             descr = fmt.get('descr', '')
+            if search and (search not in name.lower() and search not in descr.lower()):
+                continue
 
-            if search in name.lower() or search in descr.lower():
-                # Avoid duplicates if a real format is named 'auto'
-                if name.lower() != "auto":
-                    self.add_format_row(name, descr)
+            # 3. Filter: Capability check
+            # Only show formats that support the streams we have active.
+            # (e.g., if we have Audio, don't show 'image2' muxer)
+            if not self._format_supports_active_types(fmt):
+                continue
+
+            if name.lower() != "auto":
+                self.add_format_row(name, descr)
+
+    def _format_supports_active_types(self, fmt):
+        """
+        Logic to determine if the container can handle the selected streams.
+        FFmpeg formats often have flags: 'V' (Video), 'A' (Audio), 'S' (Sub).
+        """
+        # If no streams are active yet, show everything
+        if not self.active_types:
+            return True
+
+        # Mapping our internal types to FFmpeg capability flags
+        # These flags are usually found in the 'capabilities' or 'descr' 
+        # depending on how you parsed your JSON.
+        # Assuming fmt['capabilities'] contains ['video', 'audio', etc]
+        caps = fmt.get('capabilities', [])
+        
+        # Basic logical check: If the format is strictly video-only (like many image muxers)
+        # but we have audio active, we should skip it.
+        if 'audio' in self.active_types and 'audio' not in caps and len(caps) > 0:
+            return False
+            
+        return True
 
     def add_format_row(self, fmt_id, long_name):
         row_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=12, margin_top=6, margin_bottom=6)
