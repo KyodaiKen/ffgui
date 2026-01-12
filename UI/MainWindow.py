@@ -86,9 +86,9 @@ class MainWindow(Gtk.ApplicationWindow):
         label = Gtk.Label()
         label.set_markup("<big>Total</big>")
         self.pb = Gtk.ProgressBar(hexpand=True)
-        self.pb.set_text("34.38%, ETA 8s")
+        self.pb.set_text("")
         self.pb.set_show_text(True)
-        self.pb.set_fraction(0.34375)
+        self.pb.set_fraction(0.0)
         self.btn_start = Gtk.Button(label="Start")
         self.btn_start.connect("clicked", self.on_start_clicked)
         bottom_box.append(label)
@@ -338,6 +338,20 @@ class MainWindow(Gtk.ApplicationWindow):
             job["output"]["directory"] = os.path.dirname(file_path)
             job["output"]["filename"] = "" 
             job["output"]["container"] = "auto"
+
+            # Parse duration tag
+            try:
+                # Filter for streams that have a duration and find the max
+                durations = [float(s.get('duration', 0)) for s in info.get('streams', [])]
+                # Fallback to format duration if stream duration is missing
+                if not durations or max(durations) == 0:
+                    durations = [float(info.get('format', {}).get('duration', 0))]
+                
+                # Convert to microseconds for the Runner
+                stream_duration = int(max(durations) * 1000000)
+            except Exception as e:
+                print(f"Error probing duration for {file_path}: {e}")
+                stream_duration = 0
             
             for idx, stream in enumerate(info.get('streams', [])):
                 stype = stream.get('codec_type', 'data').lower() # Ensure lowercase
@@ -349,7 +363,8 @@ class MainWindow(Gtk.ApplicationWindow):
                     "active": stype in ['video', 'audio'],
                     "template": f"Copy {stype.capitalize()}",
                     "disposition": [],
-                    "language": stream.get('tags', {}).get('language', '')
+                    "language": stream.get('tags', {}).get('language', ''),
+                    "duration": stream_duration
                 })
             return job
         except Exception as e:
@@ -358,41 +373,8 @@ class MainWindow(Gtk.ApplicationWindow):
 
     def _create_job_from_single_file(self, file_path):
         """Generates a job with your specific defaults."""
-        from Models.JobsDataModel import JobsDataModel
-        from Core.Utils import get_file_title
-        
-        # 1. Create base structure
-        job = JobsDataModel.create_empty_job()
-        
-        # 2. Set Names and Paths
-        job["name"] = get_file_title(file_path)
-        job["sources"]["files"] = [file_path]
-        job["output"]["directory"] = os.path.dirname(file_path)
-        job["output"]["filename"] = "" # Leave blank as requested
-        job["output"]["container"] = "auto"
-        
-        # 3. Probe file to set stream templates
-        try:
-            info = self.app.parsers['media'].get_info(file_path)
-            for idx, stream in enumerate(info.get('streams', [])):
-                stype = stream.get('codec_type', 'data').capitalize()
-                
-                # Apply the "Copy <Type>" default
-                template_name = f"Copy {stype}"
-                
-                job["sources"]["streams"].append({
-                    "file": 0,
-                    "index": idx,
-                    "active": stype.lower() in ['video', 'audio'], # Default active V/A
-                    "template": template_name,
-                    "disposition": [],
-                    "language": stream.get('tags', {}).get('language', '')
-                })
-        except Exception as e:
-            print(f"Skipping {file_path} due to probe error: {e}")
-            return
-
-        # 4. Add to UI
+        job = self._get_job_data_from_file(file_path)
+        # Add to UI
         self.add_job_to_list(job)
 
     def on_pref(self, action, param):

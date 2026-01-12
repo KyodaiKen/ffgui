@@ -1,4 +1,6 @@
 import gi
+
+from UI.BatchOutputDirWindow import BatchOutputDirWindow
 gi.require_version("Gdk", "4.0")
 from gi.repository import Gtk, Gio, Gdk
 from UI.JobSetupWindow import JobSetupWindow
@@ -59,6 +61,7 @@ class JobRow(Gtk.ListBoxRow):
         add_act("batch_tpl_video", lambda a, p: self.on_batch_template("video"))
         add_act("batch_tpl_audio", lambda a, p: self.on_batch_template("audio"))
         add_act("batch_tpl_subtitle", lambda a, p: self.on_batch_template("subtitles"))
+        add_act("batch_chg_out_dir", self.on_batch_chg_output_dir)
         
         self.insert_action_group("context", action_group)
 
@@ -264,3 +267,21 @@ class JobRow(Gtk.ListBoxRow):
             
             # This triggers the UI refresh (count labels)
             row.update_job_data(row.job_data)
+
+    def on_batch_chg_output_dir(self, action, param):
+        # 1. Get the selected jobs from your ListBox
+        listbox = self.get_parent()
+        selected_rows = [row for row in listbox.get_selected_rows() if isinstance(row, JobRow)]
+        if not selected_rows:
+            return
+
+        selected_job_data = [row.job_data for row in selected_rows]
+
+        # 2. Create and show the window
+        # The callback 'self.refresh_job_list' should update the UI labels 
+        # to reflect the new directory
+        batch_win = BatchOutputDirWindow(
+            parent=self.get_root(), 
+            selected_jobs=selected_job_data
+        )
+        batch_win.present()

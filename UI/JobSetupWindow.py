@@ -262,8 +262,8 @@ class JobSetupWindow(Gtk.ApplicationWindow):
                 if not durations or max(durations) == 0:
                     durations = [float(info.get('format', {}).get('duration', 0))]
                 
-                # Convert to milliseconds for the Runner
-                file_durations[path] = int(max(durations) * 1000)
+                # Convert to microseconds for the Runner
+                file_durations[path] = int(max(durations) * 1000000)
             except Exception as e:
                 print(f"Error probing duration for {path}: {e}")
                 file_durations[path] = 0
@@ -281,9 +281,7 @@ class JobSetupWindow(Gtk.ApplicationWindow):
                     "template": settings.get("template", ""),
                     "disposition": settings.get("disposition", []),
                     "language": settings.get("language", ""),
-                    "import_metadata": {
-                        "duration": file_durations.get(path, 0) # Saved in ms
-                    }
+                    "duration": file_durations.get(path, 0)
                 }
                 final_data["sources"]["streams"].append(stream_entry)
             except ValueError:

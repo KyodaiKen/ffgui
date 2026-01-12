@@ -100,6 +100,10 @@ CONTEXT_MENU_XML = """
                 <attribute name='action'>context.batch_tpl_subtitle</attribute>
             </item>
         </submenu>
+        <item>
+            <attribute name='label'>Batch Change Output Directory...</attribute>
+            <attribute name='action'>context.batch_chg_out_dir</attribute>
+        </item>
     </section>
   </menu>
 </interface>

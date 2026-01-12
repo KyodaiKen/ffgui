@@ -50,12 +50,12 @@ class JobRunner:
         active_streams = [s for s in job.get('sources', {}).get('streams', []) if s.get('active')]
         
         for s in active_streams:
-            stream_dur = s.get('import_metadata', {}).get('duration', 0)
+            stream_dur = s.get('duration', 0)
             if stream_dur > max_duration:
                 max_duration = stream_dur
 
         # Use the found duration, or fallback to 1 to avoid division by zero
-        total_duration_ms = max_duration if max_duration > 0 else 1
+        total_duration_us = max_duration if max_duration > 0 else 1
         
         # 2. Launch Process
         process = subprocess.Popen(
@@ -80,7 +80,7 @@ class JobRunner:
                     progress_data[key] = value
                                         
                     if key == "progress":
-                        self._process_update(job, job_idx, total_jobs, progress_data, total_duration_ms)
+                        self._process_update(job, job_idx, total_jobs, progress_data, total_duration_us)
                         if value == "end":
                             break
             else:
@@ -125,24 +125,26 @@ class JobRunner:
         except ValueError:
             return default
 
-    def _process_update(self, job, job_idx, total_count, data, duration_ms):
+    def _process_update(self, job, job_idx, total_count, data, duration_us):
         # 1. Parse current time (Microseconds)
         # If N/A, we use the last percentage we had to avoid jumping back to 0
         raw_us = data.get('out_time_us')
-        total_us = duration_ms * 1000
         
         if raw_us == "N/A" or not raw_us:
             # If we are finishing, force 100%. Otherwise, keep last known.
             if data.get('progress') == 'end':
-                current_us = total_us
+                current_us = duration_us
             else:
-                current_us = int((job.get('_progress_percent', 0) / 100.0) * total_us)
+                current_us = int((job.get('_progress_percent', 0) / 100.0) * duration_us)
         else:
             current_us = self._get_safe_int(data, 'out_time_us')
 
+        print(f"c:{current_us} t:{duration_us}")
+
         # 2. Calculate Percentage
-        if total_us > 0:
-            percentage = min(100.0, round((current_us / total_us) * 100, 1))
+
+        if duration_us > 0:
+            percentage = min(100.0, round((current_us / duration_us) * 100, 1))
         else:
             percentage = 100.0 if data.get('progress') == 'end' else 0.0
             
@@ -154,7 +156,7 @@ class JobRunner:
         speed_str = data.get('speed', '0x')
 
         # 4. Calculate Job ETA
-        remaining_us = max(0, total_us - current_us)
+        remaining_us = max(0, duration_us - current_us)
         job_eta_sec = (remaining_us / 1_000_000) / speed if speed > 0.001 else 0
         calculated_ETA = self._format_time(job_eta_sec)
 
