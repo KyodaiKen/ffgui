@@ -5,6 +5,7 @@ from pathlib import Path
 import re
 import threading
 import ctypes
+import json
 
 # DEBUG: Print environment info to console
 print(f"Executable: {sys.executable}")
@@ -55,6 +56,16 @@ class FFGuiApp(Gtk.Application):
         self.resolve_paths()
         self.setup_ffmpeg_execs()
 
+        # Get FFMPEG dispositions
+        disposition_json_path = self.base_dir / 'codecs' / 'ffmpeg_dispositions.json'
+        dispositions = {}
+        if os.path.exists(disposition_json_path):
+            try:
+                with open(disposition_json_path, 'r', encoding='utf-8') as f:
+                    dispositions = json.load(f)
+            except Exception as e:
+                print("[WARNING] Could not load FFMPEG dispositions:\n" + e)
+
         # Initialize Parsers
         self.parsers = {
             "globals": FFmpegGlobalsParser(self.ffmpeg_full_exec_path, self.cache_dir / "globals.json"),
@@ -62,6 +73,7 @@ class FFGuiApp(Gtk.Application):
             "pix_fmts": FFmpegPixelFormatParser(self.ffmpeg_full_exec_path, self.cache_dir / "pix_fmts.json"),
             "formats": FFmpegFormatParser(self.ffmpeg_full_exec_path, self.cache_dir / "formats.json"),
             "filters": FFmpegFilterParser(self.ffmpeg_full_exec_path, self.cache_dir / "filters.json"),
+            "dispositions": dispositions,
             "media": FFmpegMediaInfoParser(self.ffprobe_full_exec_path)
         }
 
@@ -286,7 +298,7 @@ class FFGuiApp(Gtk.Application):
     def run_introspection(self):
         try:
             # Filter out the media parser for counting and processing
-            cacheable_parsers = {k: v for k, v in self.parsers.items() if k != "media"}
+            cacheable_parsers = {k: v for k, v in self.parsers.items() if k != "media" and k != "dispositions"}
             total_parsers = len(cacheable_parsers)
 
             display_names = {

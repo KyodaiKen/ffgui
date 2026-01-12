@@ -1,4 +1,6 @@
 import gi
+
+from UI.PillBuilder import PillBuilder
 gi.require_version("Gdk", "4.0")
 from gi.repository import Gtk, Pango
 from UI.MetadataManagerWindow import MetadataManagerWindow
@@ -81,8 +83,6 @@ class SourceStreamRow(Gtk.ListBoxRow):
         grid.attach(self.btn_srch_lng, 3, 3, 1, 1)
         self.btn_srch_lng.connect("clicked", self.on_search_lng_click)
 
-
-
     def on_add_dsp_click(self, button):
         # We pass a 'on_select' function to the picker
         self.pw = DispositionPickerWindow(
@@ -102,7 +102,7 @@ class SourceStreamRow(Gtk.ListBoxRow):
             self.dispositions.remove(child)
             
         # Rebuild with the fresh list
-        self.rebuild_pills(self.dispositions, self.stream_disposition)
+        PillBuilder.build(self.dispositions, self.stream_disposition)
 
     def on_search_lng_click(self, button):
         # We pass the callback exactly like we did for the Disposition picker
@@ -143,23 +143,6 @@ class SourceStreamRow(Gtk.ListBoxRow):
     def apply_template(self, template_name):
         self.ent_tpl.set_text(template_name)
 
-    def rebuild_pills(self, flowbox, disposition_str):
-        if not disposition_str:
-            return
-
-        # Use a list comprehension to get unique, non-empty tags
-        # We use list(dict.fromkeys(...)) to keep order while removing duplicates
-        raw_tags = [t.strip() for t in disposition_str.split(",") if t.strip()]
-        unique_tags = list(dict.fromkeys(raw_tags))
-
-        for disp in unique_tags:
-            lbl = Gtk.Label(label=disp)
-            #self.set_halign(Gtk.Align.START)
-            lbl.add_css_class("disposition-tag")
-            lbl.set_margin_start(0)
-            lbl.set_margin_end(0)
-            flowbox.append(lbl)
-
     def create_disposition_pills(self, disposition_str):
         """Initial creation of the container during row setup."""
         self.dispositions = Gtk.FlowBox(
@@ -174,5 +157,5 @@ class SourceStreamRow(Gtk.ListBoxRow):
         self.dispositions.set_margin_end(0)
         self.dispositions.set_margin_top(0)
         self.dispositions.set_margin_bottom(0)
-        self.rebuild_pills(self.dispositions, disposition_str)
+        PillBuilder.build(self.dispositions, disposition_str)
         return self.dispositions

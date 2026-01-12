@@ -1,0 +1,9 @@
+type: video
+codec: hevc_qsv
+parameters:
+    options:
+        preset: veryslow
+        global_quality: 23
+filters:
+    mode: simple
+    entries: []

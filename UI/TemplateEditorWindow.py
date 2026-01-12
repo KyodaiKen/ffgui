@@ -1,6 +1,9 @@
 import gi
 
 from UI.FilterGraphEditorWindow import FilterGraphEditorWindow
+from UI.FlagsPickerWindow import FlagsPickerWindow
+from UI.PillBuilder import PillBuilder
+from UI.SinglePickerWindow import SinglePickerWindow
 gi.require_version("Gdk", "4.0")
 from gi.repository import Gtk, Gdk, Pango
 from Models.TemplateDataModel import TemplateDataModel
@@ -21,7 +24,6 @@ class TemplateEditorWindow(Gtk.ApplicationWindow):
         self.on_save_callback = on_save_callback
         self.locked_type = locked_type
         self.all_types = UICore.get_all_types()
-        self.encoder_keys_group = Gtk.SizeGroup(mode=Gtk.SizeGroupMode.HORIZONTAL)
         self.clone_mode = clone_mode
 
         # Template Setup
@@ -105,6 +107,8 @@ class TemplateEditorWindow(Gtk.ApplicationWindow):
 
         self.lst_encoder = self._create_column(list_container, "Encoder Options", self.on_add_encoder_param)
         self.lst_filters = self._create_column(list_container, "Filters", self.on_add_filter, is_filter=True)
+
+        self.param_name_group = Gtk.SizeGroup(mode=Gtk.SizeGroupMode.HORIZONTAL)
 
         # Footer Actions
         btn_save = Gtk.Button(label="Save Template")
@@ -216,9 +220,65 @@ class TemplateEditorWindow(Gtk.ApplicationWindow):
         if not schema:
             return Gtk.Entry(text=str(value if value is not None else ""), hexpand=True)
 
-        # 1. PRIORITY: If there are options, it's a DropDown, regardless of 'type'
         options_list = schema.get("options", [])
-        if options_list:
+        p_type = str(schema.get("type", "string")).lower()
+
+        # 1. Multi-Select Flags as Pills (Gtk.FlowBox)
+        if p_type == "flags" and options_list:
+            btn = Gtk.Button(hexpand=True)
+            btn.set_valign(Gtk.Align.CENTER)
+            
+            # The container for the pills inside the button
+            flowbox = Gtk.FlowBox(
+                selection_mode=Gtk.SelectionMode.NONE,
+                column_spacing=4,
+                row_spacing=4,
+                margin_bottom=0,
+                margin_end=0,
+                margin_start=0,
+                margin_top=0
+            )
+            btn.set_child(flowbox)
+            
+            # Store the current state on the button object for easy extraction
+            btn._current_value = value
+
+            # Internal helper to refresh the UI
+            def refresh_ui(new_values):
+                btn._current_value = new_values
+                
+                PillBuilder.build(flowbox, new_values, no_target=True)
+                
+                # Show a placeholder if empty
+                if not flowbox.get_first_child():
+                    lbl = Gtk.Label(label="None selected")
+                    lbl.add_css_class("dim-label")
+                    flowbox.append(lbl)
+
+            # Initial population
+            refresh_ui(btn._current_value)
+
+            def on_picker_clicked(_):
+                strings = {
+                    "title": f"Select {key}",
+                    "placeholder_text": "Search flags..."
+                }
+                # Open the window we created earlier
+                win = FlagsPickerWindow(
+                    parent=self, 
+                    options=options_list, 
+                    current_values=btn._current_value, 
+                    strings=strings, 
+                    on_apply=refresh_ui
+                )
+                win.present()
+
+            btn.connect("clicked", on_picker_clicked)
+            return btn
+
+        # 1. PRIORITY: If there are options, it's a DropDown, regardless of 'type'
+        
+        if options_list and not p_type == "flags":
             tech_values = [str(o.get('name')) for o in options_list]
             display_names = [f"{o.get('name')} ({o.get('descr')})" if o.get('descr') else str(o.get('name')) for o in options_list]
             
@@ -235,7 +295,7 @@ class TemplateEditorWindow(Gtk.ApplicationWindow):
             return w
 
         # 2. NUMERIC: Logic for Spinners
-        p_type = str(schema.get("type", "string")).lower()
+        
         if any(t in p_type for t in ["int", "integer", "float", "double"]):
             # Check if this is a floating point value
             is_float = any(x in p_type for x in ["float", "double"])
@@ -275,33 +335,55 @@ class TemplateEditorWindow(Gtk.ApplicationWindow):
 
     # --- ROW MANAGEMENT ---
 
-    def add_row_to_list(self, listbox, key="", value="", schema=None):
-        row_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
+    def add_row_to_list(self, listbox, param, value="", schema=None):
+        row_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=6, margin_top=4, margin_bottom=4, margin_end=4, margin_start=4)
 
-        # 1. The Key Button
-        btn_key = Gtk.Button(label=key or "Select...", width_request=150)
-        self.encoder_keys_group.add_widget(btn_key)
+        # 1. The Header (Key + Description)
+        header = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, hexpand=True, spacing=12)
+        
+        # Key Label
+        lbl_key = Gtk.Label(xalign=0)
+        lbl_key.set_markup(f"<span weight='bold' size='large'>{param['name']}</span>")
+        
+        # ADD TO SIZE GROUP: This ensures every 'lbl_key' across all rows 
+        # has the same width, pushing the description to the same starting point.
+        self.param_name_group.add_widget(lbl_key)
+        
+        # Description Label
+        lbl_descr = Gtk.Label(label=param.get('descr', ''))
+        lbl_descr.set_xalign(0)
+        lbl_descr.add_css_class("caption")
+        lbl_descr.add_css_class("dim-label")
+        lbl_descr.set_wrap(True)
+        lbl_descr.set_wrap_mode(Pango.WrapMode.WORD_CHAR)
+        lbl_descr.set_width_chars(10)
+        lbl_descr.set_hexpand(True) # Take up the rest of the row
+        
+        header.append(lbl_key)
+        header.append(lbl_descr)
 
-        if listbox == self.lst_encoder:
-            btn_key.connect("clicked", self.on_encoder_picker_clicked)
-
-        # 2. The Value Widget
-        val_widget = self.create_value_widget(key, value, schema)
-
-        # 3. THE FIX: Add a spacer to push the delete button to the right
-        # This widget will gobble up all empty space between the switch and trash icon
-        spacer = Gtk.Box(hexpand=True)
-
-        # 4. The Delete Button
+        # 2. The Interaction Row (Widget + Delete Button)
+        # To keep the UI compact, we often put the widget and delete button on the same line
+        # but since you had them vertical, I'll follow your structure with a small fix.
+        
+        action_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=10)
+        
+        val_widget = self.create_value_widget(param['name'], value, schema)
+        val_widget.set_hexpand(True) # Make the entry/button fill the space
+        
         btn_del = Gtk.Button(icon_name="user-trash-symbolic")
+        btn_del.set_valign(Gtk.Align.CENTER)
+        
+        action_box.append(val_widget)
+        action_box.append(btn_del)
 
-        row_box.append(btn_key)
-        row_box.append(val_widget)
-        row_box.append(spacer) # Inserted spacer
-        row_box.append(btn_del)
+        # Assembly
+        row_box.append(header)
+        row_box.append(action_box)
 
         row = Gtk.ListBoxRow(child=row_box)
-        row._key_widget, row._val_widget = btn_key, val_widget
+        row._val_widget = val_widget
+        row._key = param['name']
 
         btn_del.connect("clicked", lambda *_: listbox.remove(row))
         listbox.append(row)
@@ -342,14 +424,63 @@ class TemplateEditorWindow(Gtk.ApplicationWindow):
     # --- HANDLERS ---
 
     def on_add_encoder_param(self, _):
-        def on_selected(k):
-            self.add_row_to_list(self.lst_encoder, k, value=None)
+        def on_selected(p_entry):
+            self.add_row_to_list(self.lst_encoder, p_entry, value=None)
 
-        picker = EncoderParameterPickerWindow(
-            self,
-            self.selected_codec,
-            self.get_selected_type(),
-            on_selected
+        # Key = parameter name, Value = parameter object
+        params_dict = {}
+        ffmpeg_data = getattr(self.app, 'ffmpeg_data', {})
+        
+        # 1. ADD GLOBALS FIRST (Lower Priority)
+        groups = ffmpeg_data.get('globals', [])
+        for group in groups:
+            group_name = group.get("name", "").lower()
+            for p in group.get("parameters", []):
+                p_entry = p.copy()
+                p_entry['is_global'] = True
+                p_entry['group_name'] = group_name
+                # If this name exists, it gets stored.
+                params_dict[p['name']] = p_entry
+
+        # 2. ADD CODEC-SPECIFIC SECOND (Higher Priority)
+        codecs = ffmpeg_data.get('codecs', [])
+        current_codec_data = next((c for c in codecs if c['name'] == self.selected_codec), {})
+        
+        for p in current_codec_data.get('parameters', []):
+            p_entry = p.copy()
+            p_entry['is_global'] = False
+            # OVERWRITE: If the name already exists in params_dict from the Globals step,
+            # this codec-specific p_entry replaces it entirely.
+            params_dict[p['name']] = p_entry
+
+        # Convert the deduplicated, prioritized dict back to a list
+        params = list(params_dict.values())
+
+        # Sort
+        params.sort(key=lambda x: (x['is_global'], x['name'].lower()))
+
+        stream_type = self.get_selected_type()
+
+        def is_parameter_allowed(param):
+            ctx = param.get("context", {})
+            is_av_opt = param.get('group_name') == "av_options"
+            
+            return (
+                (stream_type == "video" and ctx.get("video")) or
+                (stream_type == "audio" and ctx.get("audio")) or
+                (stream_type == "subtitle" and ctx.get("subtitle")) or
+                is_av_opt
+            )
+
+        picker = SinglePickerWindow(
+            parent_window = self,
+            options = params,
+            strings = {
+                "title": f"Select {self.selected_codec} codec parameter to add",
+                "placeholder_text": "Search for a parameter..."
+            },
+            item_filter = is_parameter_allowed,
+            on_select = on_selected
         )
         picker.present()
 
@@ -425,10 +556,48 @@ class TemplateEditorWindow(Gtk.ApplicationWindow):
 
         # 5. Clear and Add Encoder rows
         self.lst_encoder.remove_all() # GTK4 convenience method
+
+        def get_full_parameter_map():
+            """Returns a dict of {name: param_object} prioritized by Codec > Global."""
+            param_map = {}
+            ffmpeg_data = getattr(self.app, 'ffmpeg_data', {})
             
+            # 1. Globals (Lower Priority)
+            for group in ffmpeg_data.get('globals', []):
+                group_name = group.get("name", "").lower()
+                for p in group.get("parameters", []):
+                    p_entry = p.copy()
+                    p_entry['is_global'] = True
+                    p_entry['group_name'] = group_name
+                    param_map[p['name']] = p_entry
+
+            # 2. Codec-Specific (Higher Priority)
+            codecs = ffmpeg_data.get('codecs', [])
+            current_codec_data = next((c for c in codecs if c['name'] == self.selected_codec), {})
+            for p in current_codec_data.get('parameters', []):
+                p_entry = p.copy()
+                p_entry['is_global'] = False
+                param_map[p['name']] = p_entry
+            
+            return param_map
+            
+        full_map = get_full_parameter_map()
+
         params = template.get('parameters', {}).get('options', {})
         for k, v in params.items():
-            self.add_row_to_list(self.lst_encoder, k, v)
+            # Find the rich parameter object from FFmpeg data
+            if k in full_map:
+                param_obj = full_map[k]
+            else:
+                # Fallback if the parameter name isn't recognized by current FFmpeg
+                param_obj = {
+                    'name': k, 
+                    'descr': "Unknown parameter (not found in current FFmpeg data)",
+                    'is_global': False 
+                }
+            
+            # Pass the rich object (param_obj) instead of just the string (k)
+            self.add_row_to_list(self.lst_encoder, param_obj, value=v)
 
         # 6. Load Filter rows
         self.lst_filters.remove_all()
@@ -454,10 +623,8 @@ class TemplateEditorWindow(Gtk.ApplicationWindow):
         row = self.lst_encoder.get_first_child()
         while row:
             # GTK ListBox rows might contain separators or focus placeholders
-            if hasattr(row, "_key_widget") and hasattr(row, "_val_widget"):
-                key = row._key_widget.get_label()
-                if key != "Select...":
-                    options[key] = self.extract_widget_value(row._val_widget)
+            if hasattr(row, "_val_widget"):
+                options[row._key] = self.extract_widget_value(row._val_widget)
             row = row.get_next_sibling()
         return options
 
@@ -501,18 +668,6 @@ class TemplateEditorWindow(Gtk.ApplicationWindow):
         except Exception as e:
             self.show_error_dialog(f"Save failed: {str(e)}")
 
-    def _get_options_from_rows(self):
-        options = {}
-        row = self.lst_encoder.get_first_child()
-        while row:
-            # We must verify the row has the child widgets we expect
-            if hasattr(row, "_key_widget") and hasattr(row, "_val_widget"):
-                key = row._key_widget.get_label()
-                if key and key != "Select...":
-                    options[key] = self.extract_widget_value(row._val_widget)
-            row = row.get_next_sibling()
-        return options
-
     def extract_widget_value(self, w):
         """Helper to get the technical value from various widget types."""
         if isinstance(w, Gtk.DropDown):
@@ -527,7 +682,7 @@ class TemplateEditorWindow(Gtk.ApplicationWindow):
             return int(val) if val.is_integer() else val
 
         elif isinstance(w, Gtk.Switch):
-            return w.get_active()
+            return 1 if w.get_active() else 0
 
         elif isinstance(w, Gtk.Entry):
             return w.get_text()

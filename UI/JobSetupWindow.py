@@ -1,4 +1,6 @@
 import gi
+
+from UI.ContainerParameterEditorWindow import ContainerParameterEditorWindow
 gi.require_version("Gdk", "4.0")
 from gi.repository import GLib, Gtk, Gio, Gdk, Pango
 from UI.SourceStreamRow import SourceStreamRow
@@ -321,6 +323,11 @@ class JobSetupWindow(Gtk.ApplicationWindow):
         btn_edit.connect("clicked", self.on_change_container_clicked)
         tag.append(btn_edit)
 
+        self.btn_set_container_params = Gtk.Button(icon_name="view-more-symbolic", tooltip_text="Setup Container Parameters")
+        self.btn_set_container_params.connect("clicked", self.on_manage_global_params)
+        self.btn_set_container_params.set_has_frame(False)
+        tag.append(self.btn_set_container_params)
+
         self.btn_global_meta = Gtk.Button(icon_name="tag-symbolic", tooltip_text="Setup Container Metadata")
         self.btn_global_meta.connect("clicked", self.on_manage_global_meta)
         self.btn_global_meta.set_has_frame(False)
@@ -344,6 +351,13 @@ class JobSetupWindow(Gtk.ApplicationWindow):
 
     def on_manage_global_meta(self, _):
         win = MetadataManagerWindow(self, self.global_metadata, self.save_global_meta)
+        win.present()
+
+    def on_manage_global_params(self, _):
+        if self.selected_container == "auto":
+
+            return
+        win = ContainerParameterEditorWindow(self, self.job_data)
         win.present()
 
     def save_global_meta(self, meta):

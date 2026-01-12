@@ -1,0 +1,8 @@
+type: audio
+codec: libopus
+parameters:
+    options:
+        b: 32000
+filters:
+    mode: simple
+    entries: []

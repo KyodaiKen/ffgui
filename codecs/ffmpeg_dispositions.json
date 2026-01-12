@@ -1,0 +1,270 @@
+{
+  "options": [
+    {
+      "name": "default",
+      "value": "default",
+      "descr": "The primary stream that players should select by default if no other preferences are set.",
+      "context": {
+        "encoding": true,
+        "decoding": false,
+        "filtering": false,
+        "video": true,
+        "audio": true,
+        "timeline": false,
+        "runtime": false
+      }
+    },
+    {
+      "name": "dub",
+      "value": "dub",
+      "descr": "Indicates the stream is a dubbed version of the original language (e.g., translated audio).",
+      "context": {
+        "encoding": true,
+        "decoding": false,
+        "filtering": false,
+        "video": false,
+        "audio": true,
+        "timeline": false,
+        "runtime": false
+      }
+    },
+    {
+      "name": "original",
+      "value": "original",
+      "descr": "The original language/version of the content.",
+      "context": {
+        "encoding": true,
+        "decoding": false,
+        "filtering": false,
+        "video": true,
+        "audio": true,
+        "timeline": false,
+        "runtime": false
+      }
+    },
+    {
+      "name": "comment",
+      "value": "comment",
+      "descr": "A commentary track, typically featuring directors, actors, or producers.",
+      "context": {
+        "encoding": true,
+        "decoding": false,
+        "filtering": false,
+        "video": false,
+        "audio": true,
+        "timeline": false,
+        "runtime": false
+      }
+    },
+    {
+      "name": "lyrics",
+      "value": "lyrics",
+      "descr": "Subtitles or text containing song lyrics.",
+      "context": {
+        "encoding": true,
+        "decoding": false,
+        "filtering": false,
+        "video": false,
+        "audio": false,
+        "timeline": false,
+        "runtime": false
+      }
+    },
+    {
+      "name": "karaoke",
+      "value": "karaoke",
+      "descr": "Content intended for karaoke use (audio without lead vocals or lyrics with timing).",
+      "context": {
+        "encoding": true,
+        "decoding": false,
+        "filtering": false,
+        "video": true,
+        "audio": true,
+        "timeline": false,
+        "runtime": false
+      }
+    },
+    {
+      "name": "forced",
+      "value": "forced",
+      "descr": "Subtitles that should be displayed even when the user hasn't explicitly enabled them (e.g., for foreign dialogue in a native movie).",
+      "context": {
+        "encoding": true,
+        "decoding": false,
+        "filtering": false,
+        "video": false,
+        "audio": false,
+        "timeline": false,
+        "runtime": false
+      }
+    },
+    {
+      "name": "hearing_impaired",
+      "value": "hearing_impaired",
+      "descr": "Content specialized for the hearing impaired, such as SDH (Subtitles for the Deaf and Hard of Hearing) containing sound effect descriptions.",
+      "context": {
+        "encoding": true,
+        "decoding": false,
+        "filtering": false,
+        "video": false,
+        "audio": true,
+        "timeline": false,
+        "runtime": false
+      }
+    },
+    {
+      "name": "visual_impaired",
+      "value": "visual_impaired",
+      "descr": "An audio description track designed to help visually impaired viewers understand the visual action.",
+      "context": {
+        "encoding": true,
+        "decoding": false,
+        "filtering": false,
+        "video": false,
+        "audio": true,
+        "timeline": false,
+        "runtime": false
+      }
+    },
+    {
+      "name": "clean_effects",
+      "value": "clean_effects",
+      "descr": "An audio track containing only ambient sounds and music, without dialogue.",
+      "context": {
+        "encoding": true,
+        "decoding": false,
+        "filtering": false,
+        "video": false,
+        "audio": true,
+        "timeline": false,
+        "runtime": false
+      }
+    },
+    {
+      "name": "attached_pic",
+      "value": "attached_pic",
+      "descr": "A static image attached to the stream, usually album art or a cover image.",
+      "context": {
+        "encoding": true,
+        "decoding": false,
+        "filtering": false,
+        "video": true,
+        "audio": false,
+        "timeline": false,
+        "runtime": false
+      }
+    },
+    {
+      "name": "timed_thumbnails",
+      "value": "timed_thumbnails",
+      "descr": "Video stream consisting of small images used for seeking previews or chapter markers.",
+      "context": {
+        "encoding": true,
+        "decoding": false,
+        "filtering": false,
+        "video": true,
+        "audio": false,
+        "timeline": false,
+        "runtime": false
+      }
+    },
+    {
+      "name": "non_diegetic",
+      "value": "non_diegetic",
+      "descr": "Audio or subtitles that are not part of the primary narrative world (e.g., technical metadata or external info).",
+      "context": {
+        "encoding": true,
+        "decoding": false,
+        "filtering": false,
+        "video": false,
+        "audio": true,
+        "timeline": false,
+        "runtime": false
+      }
+    },
+    {
+      "name": "captions",
+      "value": "captions",
+      "descr": "Closed captions or subtitles containing dialogue and relevant sound descriptions.",
+      "context": {
+        "encoding": true,
+        "decoding": false,
+        "filtering": false,
+        "video": false,
+        "audio": false,
+        "timeline": false,
+        "runtime": false
+      }
+    },
+    {
+      "name": "descriptions",
+      "value": "descriptions",
+      "descr": "Narrative descriptions of the video content, often for accessibility.",
+      "context": {
+        "encoding": true,
+        "decoding": false,
+        "filtering": false,
+        "video": false,
+        "audio": true,
+        "timeline": false,
+        "runtime": false
+      }
+    },
+    {
+      "name": "metadata",
+      "value": "metadata",
+      "descr": "Data stream containing information about the media rather than playable content.",
+      "context": {
+        "encoding": true,
+        "decoding": false,
+        "filtering": false,
+        "video": true,
+        "audio": true,
+        "timeline": false,
+        "runtime": false
+      }
+    },
+    {
+      "name": "dependent",
+      "value": "dependent",
+      "descr": "A stream that requires another stream to be decoded (e.g., an MVC enhancement layer for 3D video).",
+      "context": {
+        "encoding": true,
+        "decoding": false,
+        "filtering": false,
+        "video": true,
+        "audio": true,
+        "timeline": false,
+        "runtime": false
+      }
+    },
+    {
+      "name": "still_image",
+      "value": "still_image",
+      "descr": "A video stream containing a single frame or static image meant to be displayed continuously.",
+      "context": {
+        "encoding": true,
+        "decoding": false,
+        "filtering": false,
+        "video": true,
+        "audio": false,
+        "timeline": false,
+        "runtime": false
+      }
+    },
+    {
+      "name": "multilayer",
+      "value": "multilayer",
+      "descr": "Indicates the stream contains multiple layers of content (e.g., HDR10+ or Dolby Vision layers).",
+      "context": {
+        "encoding": true,
+        "decoding": false,
+        "filtering": false,
+        "video": true,
+        "audio": false,
+        "timeline": false,
+        "runtime": false
+      }
+    }
+  ]
+}

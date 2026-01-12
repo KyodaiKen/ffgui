@@ -17,7 +17,8 @@ class JobsDataModel:
             "output": {
                 "directory": "",
                 "filename": "",
-                "container": "mkv"
+                "container": "mkv",
+                "container_parameters": []
             }
         }
 

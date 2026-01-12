@@ -2,3 +2,6 @@ type: video
 codec: copy
 parameters:
     options: {}
+filters:
+    mode: simple
+    entries: []
