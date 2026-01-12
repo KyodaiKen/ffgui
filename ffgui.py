@@ -1,33 +1,37 @@
 import os
 import sys
-
-if getattr(sys, 'frozen', False):
-    # In der EXE liegen alle DLLs direkt in base_path oder _internal
-    base_path = sys._MEIPASS
-    # Für PyInstaller 6.x liegen DLLs oft in _internal
-    internal_path = os.path.join(base_path, "_internal")
-
-    for p in [base_path, internal_path]:
-        if os.path.exists(p):
-            os.environ['PATH'] = p + os.pathsep + os.environ['PATH']
-            if hasattr(os, 'add_dll_directory'):
-                os.add_dll_directory(p)
-else:
-    # Skript-Modus
-    base_path = os.path.dirname(sys.executable)
-
-import gi
-gi.require_version('Gtk', '4.0')
-from gi.repository import GLib, Gtk, Gdk
-gi.require_version('Gtk', '4.0')
-from gi.repository import GLib, Gtk, Gdk
-
-from gi.repository import GLib, Gtk, Gdk, Pango
+import platform
 from pathlib import Path
 import re
 import threading
-import platform
+import ctypes
 
+# DEBUG: Print environment info to console
+print(f"Executable: {sys.executable}")
+print(f"Python Path: {sys.path}")
+
+import ctypes
+
+if getattr(sys, 'frozen', False):
+    app_dir = os.path.dirname(os.path.abspath(sys.executable))
+    
+    # Manually pre-load the most suspicious DLLs
+    # If one of these lines fails, it will tell us exactly which DLL is broken
+    try:
+        ctypes.CDLL(os.path.join(app_dir, 'libwinpthread-1.dll'))
+        ctypes.CDLL(os.path.join(app_dir, 'zlib1.dll'))
+        ctypes.CDLL(os.path.join(app_dir, 'libintl-8.dll'))
+        ctypes.CDLL(os.path.join(app_dir, 'libglib-2.0-0.dll'))
+    except Exception as e:
+        print(f"PRE-LOAD ERROR: {e}")
+
+# --- 2. GTK Imports ---
+import gi
+gi.require_version('Gtk', '4.0')
+gi.require_version('Adw', '1')
+from gi.repository import GLib, Gtk, Gdk, Pango, Adw
+
+# --- 3. Project Modules ---
 from UI.MainWindow import MainWindow
 from Core.FFmpegParsers import (
     FFmpegFilterParser,
@@ -60,6 +64,28 @@ class FFGuiApp(Gtk.Application):
             "filters": FFmpegFilterParser(self.ffmpeg_full_exec_path, self.cache_dir / "filters.json"),
             "media": FFmpegMediaInfoParser(self.ffprobe_full_exec_path)
         }
+
+    _ICONS_SETUP_DONE = False
+
+    def _setup_windows_icons(self):
+        if os.name != 'nt':
+            return
+            
+        display = Gdk.Display.get_default()
+        if display:
+            theme = Gtk.IconTheme.get_for_display(display)
+            
+            # Point directly to the folder where the .svg files are located
+            # Based on your structure, this is the 'actions' folder
+            icon_dir = os.path.join(base_path_app, "gtk-icons", "hicolor", "scalable", "actions")
+            
+            if os.path.exists(icon_dir):
+                # We add the direct folder to the search path
+                theme.add_search_path(icon_dir)
+                
+                # Since there is no index.theme, GTK doesn't know 
+                # to look for 'icon-name-symbolic.svg'. 
+                # It only looks for 'icon-name.svg'.
 
     def _load_global_css(self):
         css_provider = Gtk.CssProvider()
@@ -194,6 +220,7 @@ class FFGuiApp(Gtk.Application):
 
     def do_startup(self):
         Gtk.Application.do_startup(self)
+        self._setup_windows_icons()
         self._load_global_css()
         self.show_init_progress()
 

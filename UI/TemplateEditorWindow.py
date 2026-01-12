@@ -349,7 +349,6 @@ class TemplateEditorWindow(Gtk.ApplicationWindow):
             self,
             self.selected_codec,
             self.get_selected_type(),
-            self.get_codec_params_list(),
             on_selected
         )
         picker.present()
@@ -371,7 +370,6 @@ class TemplateEditorWindow(Gtk.ApplicationWindow):
             self,
             self.selected_codec,
             self.get_selected_type(),
-            self.get_codec_params_list(),
             on_selected
         )
         picker.present()

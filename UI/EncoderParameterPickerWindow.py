@@ -1,129 +1,123 @@
 import gi
 gi.require_version("Gtk", "4.0")
-from gi.repository import Gtk, Pango
+from gi.repository import Gtk, Pango, GLib
 
 class EncoderParameterPickerWindow(Gtk.ApplicationWindow):
-    # Added stream_type to the arguments
-    def __init__(self, parent_window, codec_name, stream_type, schema_data, on_select, **kwargs):
+    def __init__(self, parent_window, codec_name, stream_type, on_select, **kwargs):
         super().__init__(**kwargs, title=f"Options for {codec_name}")
         self.on_select = on_select
         self.set_default_size(450, 600)
         self.set_transient_for(parent_window)
         self.set_modal(True)
 
-        self.params = []
-
-        # Safely get the application instance
+        param_dict = {}
         app = Gtk.Application.get_default()
-        if not app or not hasattr(app, 'ffmpeg_data'):
-            return
-
-        # app.ffmpeg_data['globals'] is already the list of groups from 'data' in globals.json
-        groups = app.ffmpeg_data.get('globals', [])
-
+        ffmpeg_data = getattr(app, 'ffmpeg_data', {})
+        
+        # 1. Add Global Options
+        # We use the context flags (audio/video) to filter, not just group names
+        groups = ffmpeg_data.get('globals', [])
         for group in groups:
             group_name = group.get("name", "").lower()
-
-            # Logic to filter globals based on the current stream type
-            # Note: 'av_options' is the name used in your globals.json for general context
-            should_include = (group_name == "av_options") or \
-                             (group_name == "video" and stream_type == "video") or \
-                             (group_name == "audio" and stream_type == "audio") or \
-                             (group_name == "subtitle" and stream_type == "subtitle")
-
-            if should_include:
+            if group_name in ["av_options", "video", "audio", "subtitle", "common"]:
                 for p in group.get("parameters", []):
-                    self.params.append({
-                        "name": p.get("name"),
-                        "help": p.get("descr", "Global FFmpeg Option"), # uses 'descr' from your JSON
-                        "type": p.get("type", "string"),
-                        "schema": p,
-                        "is_global": True
-                    })
+                    ctx = p.get("context", {})
+                    
+                    # BITRATE FIX: Check internal context flags. 
+                    # 'b' usually has 'video': true AND 'audio': true
+                    is_valid = (
+                        (stream_type == "video" and ctx.get("video")) or
+                        (stream_type == "audio" and ctx.get("audio")) or
+                        (stream_type == "subtitle" and ctx.get("subtitle")) or
+                        (group_name == "av_options")
+                    )
 
-        # Add Codec-Specific (Private) Options
-        params_list = []
-        if isinstance(schema_data, list):
-            params_list = schema_data
-        elif isinstance(schema_data, dict):
-            # If the dict has a 'parameters' key (like your JSON files)
-            if "parameters" in schema_data:
-                params_list = schema_data.get("parameters", [])
-            else:
-                # If the dict IS the parameters (key: info style)
-                for p_name, p_info in schema_data.items():
-                    if isinstance(p_info, dict):
-                        # Ensure the name is included in the dict
-                        p_copy = p_info.copy()
-                        p_copy['name'] = p_name
-                        params_list.append(p_copy)
+                    if is_valid:
+                        name = p.get("name")
+                        param_dict[name] = {
+                            "name": name,
+                            "help": p.get("descr", "Global Option"),
+                            "is_global": True,
+                            "schema": p
+                        }
 
-        for p in params_list:
-            # Match 'descr' from your positive.json and negative.json
-            self.params.append({
-                "name": p.get("name"),
-                "help": p.get("descr", "Codec-specific option"),
-                "type": p.get("type", "string"),
-                "schema": p,
-                "is_global": False
-            })
+        # 2. Add Codec-Specific (Private) Options from ffmpeg_data['codecs']
+        # We find the codec entry that matches the codec_name provided
+        all_codecs = ffmpeg_data.get('codecs', [])
+        target_codec = next((c for c in all_codecs if c.get('name') == codec_name), None)
+        
+        if target_codec:
+            codec_params = target_codec.get("parameters", [])
+            for p in codec_params:
+                name = p.get("name")
+                # Private options overwrite Globals of the same name
+                param_dict[name] = {
+                    "name": name,
+                    "help": p.get("descr", "Codec-specific option"),
+                    "is_global": False,
+                    "schema": p
+                }
 
-        # UI Setup
+        self.params = sorted(param_dict.values(), key=lambda x: x['name'])
+
+        # 3. UI Setup
         hb = Gtk.HeaderBar()
         self.set_titlebar(hb)
-        self.search_entry = Gtk.SearchEntry(placeholder_text="Filter options...")
+        self.search_entry = Gtk.SearchEntry(placeholder_text="Filter options (e.g. bitrate, crf)...")
         self.search_entry.connect("search-changed", self.on_search_changed)
         hb.set_title_widget(self.search_entry)
 
         self.lst_params = Gtk.ListBox()
         self.lst_params.add_css_class("boxed-list")
+        self.lst_params.set_filter_func(self.filter_rows)
         self.lst_params.connect("row-activated", self.on_row_activated)
 
         scroll = Gtk.ScrolledWindow(vexpand=True)
         scroll.set_child(self.lst_params)
         self.set_child(scroll)
 
-        self.populate_list()
+        self.create_list_widgets()
+        self.search_entry.grab_focus()
 
-    def populate_list(self, filter_text=""):
-        while child := self.lst_params.get_first_child():
-            self.lst_params.remove(child)
+    def create_list_widgets(self):
+        """Create rows once for maximum performance."""
+        for p in self.params:
+            row = Gtk.ListBoxRow()
+            row._data = p
+            row._search_key = f"{p['name']} {p['help']}".lower()
 
-        for p in sorted(self.params, key=lambda x: x['name']):
-            if not filter_text or filter_text.lower() in p['name'].lower():
-                row = Gtk.ListBoxRow()
-                box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=4)
-                # Discrete margins
-                box.set_margin_top(10)
-                box.set_margin_bottom(10)
-                box.set_margin_start(10)
-                box.set_margin_end(10)
+            box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=4, 
+                          margin_start=12, margin_end=12, margin_top=8, margin_bottom=8)
+            
+            header = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=10)
+            lbl_key = Gtk.Label(xalign=0)
+            lbl_key.set_markup(f"<b>{p['name']}</b>")
+            
+            type_text = "Global" if p['is_global'] else "Private"
+            lbl_type = Gtk.Label(xalign=0)
+            lbl_type.set_markup(f"<span size='small' alpha='50%'>[{type_text}]</span>")
+            
+            header.append(lbl_key)
+            header.append(lbl_type)
+            
+            lbl_help = Gtk.Label(label=p['help'], xalign=0, wrap=True)
+            lbl_help.add_css_class("caption")
 
-                header = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=10)
-                lbl_key = Gtk.Label(xalign=0)
-                lbl_key.set_markup(f"<b>{p['name']}</b>")
+            box.append(header)
+            box.append(lbl_help)
+            row.set_child(box)
+            self.lst_params.append(row)
 
-                type_lbl = Gtk.Label(xalign=0)
-                type_text = "Global" if p.get('is_global') else "Private"
-                type_lbl.set_markup(f"<span size='small' alpha='50%'>[{type_text}]</span>")
-
-                header.append(lbl_key)
-                header.append(type_lbl)
-
-                lbl_help = Gtk.Label(label=p['help'], xalign=0)
-                lbl_help.add_css_class("caption")
-                lbl_help.set_wrap(True)
-
-                box.append(header)
-                box.append(lbl_help)
-                row.set_child(box)
-                row._data = p
-                self.lst_params.append(row)
+    def filter_rows(self, row):
+        search_text = self.search_entry.get_text().lower()
+        if not search_text:
+            return True
+        return search_text in row._search_key
 
     def on_search_changed(self, entry):
-        self.populate_list(entry.get_text())
+        self.lst_params.invalidate_filter()
 
     def on_row_activated(self, listbox, row):
-        parameter_name = row._data['name']
-        self.on_select(parameter_name)
+        # Return the parameter name to the callback
+        self.on_select(row._data['name'])
         self.destroy()
