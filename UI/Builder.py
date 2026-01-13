@@ -12,10 +12,6 @@ class Builder:
 
         if not tags:
             return
-
-        # Handle string or list inputs
-        if isinstance(tags, str):
-            tags = tags.split(",")
         
         unique_tags = list(dict.fromkeys([t.strip() for t in tags if t.strip()]))
 

@@ -355,6 +355,11 @@ class MainWindow(Gtk.ApplicationWindow):
             
             for idx, stream in enumerate(info.get('streams', [])):
                 stype = stream.get('codec_type', 'data').lower() # Ensure lowercase
+
+                # Get the raw dict: {"default": 1, "forced": 0, ...}
+                disposition_dict = stream.get('disposition', {})
+                # Convert to list: ['default']
+                active_dispositions = [k for k, v in disposition_dict.items() if v == 1]
                 
                 job["sources"]["streams"].append({
                     "file": 0, 
@@ -362,7 +367,7 @@ class MainWindow(Gtk.ApplicationWindow):
                     "type": stype, # This MUST exist for the toggle to find it
                     "active": stype in ['video', 'audio'],
                     "template": f"Copy {stype.capitalize()}",
-                    "disposition": [],
+                    "disposition": active_dispositions,
                     "language": stream.get('tags', {}).get('language', ''),
                     "duration": stream_duration
                 })
