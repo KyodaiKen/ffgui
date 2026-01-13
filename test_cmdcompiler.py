@@ -42,6 +42,8 @@ def main():
 
                 print("\033[92mGenerated Command:\033[0m") # Print in green
                 print(f"{full_command}\n")
+                print("\033[92mAs array:\033[0m") # Print in green
+                print(cmd_args)
                 print("-" * 40)
 
             except Exception:

@@ -34,8 +34,12 @@ class FFmpegCmdCompiler:
         # 2. Setup Counters
         type_counters = {"video": 0, "audio": 0, "subtitle": 0}
         active_streams = [s for s in job.get('sources', {}).get('streams', []) if s.get('active')]
-        filter_complex_parts = []
-        
+
+        # We already need the container format selection here for _apply_disposition_deltas
+        # so it can map disposition for matroska correctly if the container matroska is requested:
+        output_cfg = job.get('output', {})
+        container_short_name = output_cfg.get('container', 'auto')
+
         for stream in active_streams:
             # A. Resolve Template First to find the true stream type
             template_val = stream.get('template')
@@ -71,8 +75,6 @@ class FFmpegCmdCompiler:
             cmd_parts.append("-map")
             cmd_parts.append(f"{file_idx}:{src_idx}")
 
-            FFmpegCmdCompiler._apply_disposition_deltas(cmd_parts, specifier, stream)
-
             if template_data:
                 # Codec
                 codec = template_data.get('codec', 'copy')
@@ -97,16 +99,16 @@ class FFmpegCmdCompiler:
                         cmd_parts.append(f"-{t_char}f{specifier}")
                         cmd_parts.append(f"\"{f_str}\"")
 
+            FFmpegCmdCompiler._apply_disposition_deltas(container_short_name, cmd_parts, specifier, stream)
+
             # E. Increment Counter for this type
             type_counters[s_type] += 1
 
         cmd_parts += ["-progress", "-"] #Add progress to stdout redirection
 
         # 2. Setup Output Metadata
-        output_cfg = job.get('output', {})
         out_dir = output_cfg.get('directory', '.')
         out_filename = (output_cfg.get('filename') or "").strip()
-        container_short_name = output_cfg.get('container', 'auto')
 
         # 3. Determine Source Path for naming
         # Safely get the first file from 'src_files'
@@ -134,11 +136,24 @@ class FFmpegCmdCompiler:
             all_formats = getattr(app, 'ffmpeg_data', {}).get('formats', [])
             fmt_obj = next((f for f in all_formats if f['name'] == container_short_name), None)
             
-            ext_suffix = "mkv"
+            ext_suffix = output_cfg.get('container', "mkv")
             if fmt_obj and fmt_obj.get('extensions'):
                 ext_suffix = fmt_obj['extensions'][0]
             
             final_output_path = Path(out_dir) / f"{name_to_use}.{ext_suffix}"
+
+        # Output container format options
+        out_container_params = output_cfg.get('container_parameters', [])
+        for parm in out_container_params:
+            key = parm.get('name')
+            val = parm.get('value')
+            
+            if key and val is not None:
+                cmd_parts.append(f"-{key}")
+                if isinstance(val, list):
+                    cmd_parts.append("+".join(map(str, val)) if key == "movflags" else ",".join(map(str, val)))
+                else:
+                    cmd_parts.append(str(val))
 
         # 5. Add final path
         cmd_parts.append(str(final_output_path.resolve()))
@@ -155,17 +170,24 @@ class FFmpegCmdCompiler:
         return ",".join(res)
     
     @staticmethod
-    def _apply_disposition_deltas(cmd_parts, stream_specifier, stream_data):
-        original = set(stream_data.get('original_disposition', []))
-        requested = set(stream_data.get('disposition', []))
+    def _apply_disposition_deltas(container_short_name, cmd_parts, stream_specifier, stream_data):
+        requested = stream_data.get('disposition', [])
         
-        # Determine what was added and what was removed
-        added = requested - original
-        removed = original - requested
-        
-        # FFmpeg uses +flag to add and -flag to remove
-        for flag in added:
-            cmd_parts.extend([f"-disposition:{stream_specifier}", f"+{flag}"])
-            
-        for flag in removed:
-            cmd_parts.extend([f"-disposition:{stream_specifier}", f"-{flag}"])
+        if isinstance(requested, str):
+            requested = [v.strip() for v in requested.split(',') if v.strip()]
+        elif not isinstance(requested, list):
+            requested = []
+
+        if requested:
+            combined_flags = "+".join(requested)
+            cmd_parts.append(f"-disposition{stream_specifier}")
+            cmd_parts.append(combined_flags)
+
+            # Map to titles for Matroska because the muxer ignores certain bits
+            if container_short_name in ["matroska", "auto"] or "matroska" in str(container_short_name).lower():
+                title_tag = ", ".join(requested).replace('_', ' ').title()
+                cmd_parts.append(f"-metadata:s{stream_specifier}")
+                cmd_parts.append(f"title={title_tag}")
+        else:
+            cmd_parts.append(f"-disposition{stream_specifier}")
+            cmd_parts.append("0")
