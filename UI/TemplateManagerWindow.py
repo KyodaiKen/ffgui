@@ -3,7 +3,7 @@ import os
 gi.require_version("Gtk", "4.0")
 from gi.repository import Gtk, Gdk, Gio, Pango
 from UI.TemplateEditorWindow import TemplateEditorWindow
-from UI.Core import UICore
+from UI.Icons import Icons
 from Models.TemplateDataModel import TemplateDataModel
 
 class TemplateManagerWindow(Gtk.ApplicationWindow):
@@ -71,7 +71,7 @@ class TemplateManagerWindow(Gtk.ApplicationWindow):
         row_box.append(lbl_type)
 
         t_type = t.get("type", "unknown").lower()
-        icon_name = UICore.get_icon_for_type(t_type)
+        icon_name = Icons.get_icon_for_type(t_type)
         img_type = Gtk.Image.new_from_icon_name(icon_name)
         img_type.set_tooltip_text(f"Type: {t_type.capitalize()}")
         row_box.append(img_type)

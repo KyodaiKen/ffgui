@@ -213,6 +213,7 @@ class JobSetupWindow(Gtk.ApplicationWindow):
                     self.selected_streams[(path, idx)] = {
                         "active": s.get("active", True),
                         "template": s.get("template", ""),
+                        "original_disposition": s.get("original_disposition", []),
                         "disposition": s.get("disposition", []),
                         "language": s.get("language", ""),
                         "metadata": s.get("metadata", {}) 
@@ -282,6 +283,7 @@ class JobSetupWindow(Gtk.ApplicationWindow):
                     "active": settings.get("active", False),
                     "template": settings.get("template", ""),
                     "disposition": settings.get("disposition", []),
+                    "original_disposition": settings.get("original_disposition", []),
                     "language": settings.get("language", ""),
                     "duration": file_durations.get(path, 0)
                 }
@@ -445,6 +447,7 @@ class JobSetupWindow(Gtk.ApplicationWindow):
                     "active": row.chk.get_active(),
                     "template": row.ent_tpl.get_text(),
                     "disposition": row.stream_disposition,
+                    "original_disposition": getattr(row, 'original_disposition', []),
                     "language": row.ent_lng.get_text(),
                     "metadata": row.stream_metadata
                 }
@@ -505,15 +508,15 @@ class JobSetupWindow(Gtk.ApplicationWindow):
                     # Extract raw stream tags from the file
                     source_stream_tags = dict(stream.get('tags', {}))
 
+                    disposition_obj = stream.get('disposition', {})
+                    file_active_flags = [k for k, v in disposition_obj.items() if v == 1]
+
                     # Check cache to see if user has already modified this stream
                     key = (source_path, stm_idx)
                     cached_data = self.selected_streams.get(key)
                     
                     # Determine which metadata to use (Cached > Source)
                     initial_meta = cached_data.get("metadata", source_stream_tags) if cached_data else source_stream_tags
-
-                    disposition_obj = stream.get('disposition', {})
-                    initial_disposition = self.parse_disposition_to_string(disposition_obj)
 
                     # Pass this to the row (assuming SourceStreamRow is updated to handle/display it)
                     row = SourceStreamRow(
@@ -523,19 +526,16 @@ class JobSetupWindow(Gtk.ApplicationWindow):
                         stm_idx, 
                         self, 
                         initial_metadata=initial_meta,
-                        initial_disposition=initial_disposition
+                        initial_disposition=file_active_flags
                     )
+
+                    row.original_disposition = file_active_flags
 
                     if cached_data:
                         row.chk.set_active(cached_data["active"])
                         row.ent_tpl.set_text(cached_data["template"])
-
-                        # Ensure disposition is a string for the UI row
                         disp = cached_data.get("disposition", "")
-                        if isinstance(disp, list):
-                            row.apply_disposition(",".join(disp))
-                        else:
-                            row.apply_disposition(disp)
+                        row.apply_disposition(disp)
                         row.ent_lng.set_text(cached_data['language'])
                     else:
                         # New stream default: active if V or A
@@ -727,11 +727,3 @@ class JobSetupWindow(Gtk.ApplicationWindow):
                 self.entry_output_dir.set_text(folder.get_path())
         except Exception as e:
             print(f"Folder selection cancelled: {e}")
-
-    def parse_disposition_to_string(self, disposition_dict):
-        """Converts {"default": 1, "dub": 0...} to 'default'"""
-        if not disposition_dict:
-            return ""
-        # Collect keys where value is 1
-        active_disps = [k for k, v in disposition_dict.items() if v == 1]
-        return ",".join(active_disps)

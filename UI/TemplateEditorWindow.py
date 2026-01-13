@@ -7,7 +7,7 @@ from UI.FilterParameterWindow import FilterParameterWindow
 from UI.FilterGraphEditorWindow import FilterGraphEditorWindow
 from UI.FlagsPickerWindow import FlagsPickerWindow
 from UI.Builder import Builder
-from UI.Core import UICore
+from UI.Icons import Icons
 import copy
 
 class TemplateEditorWindow(Gtk.ApplicationWindow):
@@ -18,7 +18,7 @@ class TemplateEditorWindow(Gtk.ApplicationWindow):
         self.app = Gtk.Application.get_default()
         self.on_save_callback = on_save_callback
         self.locked_type = locked_type
-        self.all_types = UICore.get_all_types()
+        self.all_types = Icons.get_all_types()
         self.clone_mode = clone_mode
 
         # Template Setup

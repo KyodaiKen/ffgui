@@ -56,16 +56,6 @@ class FFGuiApp(Gtk.Application):
         self.resolve_paths()
         self.setup_ffmpeg_execs()
 
-        # Get FFMPEG dispositions
-        disposition_json_path = self.base_dir / 'codecs' / 'ffmpeg_dispositions.json'
-        dispositions = {}
-        if os.path.exists(disposition_json_path):
-            try:
-                with open(disposition_json_path, 'r', encoding='utf-8') as f:
-                    dispositions = json.load(f)
-            except Exception as e:
-                print("[WARNING] Could not load FFMPEG dispositions:\n" + e)
-
         # Initialize Parsers
         self.parsers = {
             "globals": FFmpegGlobalsParser(self.ffmpeg_full_exec_path, self.cache_dir / "globals.json"),
@@ -73,7 +63,6 @@ class FFGuiApp(Gtk.Application):
             "pix_fmts": FFmpegPixelFormatParser(self.ffmpeg_full_exec_path, self.cache_dir / "pix_fmts.json"),
             "formats": FFmpegFormatParser(self.ffmpeg_full_exec_path, self.cache_dir / "formats.json"),
             "filters": FFmpegFilterParser(self.ffmpeg_full_exec_path, self.cache_dir / "filters.json"),
-            "dispositions": dispositions,
             "media": FFmpegMediaInfoParser(self.ffprobe_full_exec_path)
         }
 
@@ -330,6 +319,17 @@ class FFGuiApp(Gtk.Application):
                     GLib.idle_add(self.prog_bar.set_fraction, total_progress)
 
                 self.ffmpeg_data[key] = parser.get_all(progress_callback=granular_callback)
+
+            # Add dispositions:
+            disposition_json_path = self.base_dir / 'codecs' / 'ffmpeg_dispositions.json'
+            dispositions = {}
+            if os.path.exists(disposition_json_path):
+                try:
+                    with open(disposition_json_path, 'r', encoding='utf-8') as f:
+                        dispositions = json.load(f)
+                except Exception as e:
+                    print("[WARNING] Could not load FFMPEG dispositions:\n" + e)
+            self.ffmpeg_data["dispositions"] = dispositions
 
             GLib.idle_add(self.on_introspection_finished)
         except Exception as e:

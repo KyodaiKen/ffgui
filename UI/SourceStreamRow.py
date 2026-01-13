@@ -4,7 +4,7 @@ from UI.Builder import Builder
 gi.require_version("Gdk", "4.0")
 from gi.repository import Gtk, Pango
 from UI.MetadataManagerWindow import MetadataManagerWindow
-from UI.DispositionPickerWindow import DispositionPickerWindow
+from UI.FlagsPickerWindow import FlagsPickerWindow
 from UI.LanguagePickerWindow import LanguagePickerWindow
 
 class SourceStreamRow(Gtk.ListBoxRow):
@@ -84,24 +84,33 @@ class SourceStreamRow(Gtk.ListBoxRow):
         self.btn_srch_lng.connect("clicked", self.on_search_lng_click)
 
     def on_add_dsp_click(self, button):
-        # We pass a 'on_select' function to the picker
-        self.pw = DispositionPickerWindow(
-            self.parent_window,
-            self.stream_disposition,
-            on_select=self.apply_disposition # New callback
+        # 1. Get the list of all possible FFmpeg disposition flags from app data
+        # Assuming your app instance has the ffmpeg_data dict populated
+        options = getattr(self.parent_window.app, 'ffmpeg_data', {}).get('dispositions', {}).get('options', [])
+        
+        # 2. Open the FlagsPickerWindow
+        self.pw = FlagsPickerWindow(
+            parent=self.parent_window,
+            options=options,
+            current_values=self.stream_disposition, # Pass existing flags
+            strings={
+                "title": "Select Stream Dispositions",
+                "placeholder_text": "Search dispositions (e.g. default, forced)..."
+            },
+            on_apply=self.apply_disposition
         )
         self.pw.present()
 
-    def apply_disposition(self, selected_text):
-        # REPLACE the string, don't use +=
-        # The Picker already handles the full list of tags
-        self.stream_disposition = selected_text
+    def apply_disposition(self, selected_flags):
+        # Store the list of selected flags
+        self.stream_disposition = selected_flags
         
-        # Clear the FlowBox
+        # Clear the FlowBox UI
         while child := self.dispositions.get_first_child():
             self.dispositions.remove(child)
             
-        # Rebuild with the fresh list
+        # Rebuild with the fresh list using the Builder
+        # The Builder.build_pill method handles the list -> UI conversion
         Builder.build_pill(self.dispositions, self.stream_disposition)
 
     def on_search_lng_click(self, button):

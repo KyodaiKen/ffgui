@@ -1,4 +1,4 @@
-class UICore:
+class Icons:
     # Mapping PyAV stream types to GNOME symbolic icons
     TYPE_ICONS = {
         "video": "video-x-generic-symbolic",
@@ -18,12 +18,6 @@ class UICore:
         "attachment": "Attachment",
         "unknown": "Unknown Type"
     }
-
-    # Common Global attributes we expect to find in 'parameters'
-    GLOBAL_PROPERTIES = [
-        "bit_rate", "sample_rate", "channels", "width", "height", 
-        "pix_fmt", "gop_size", "profile", "level", "time_base"
-    ]
 
     @classmethod
     def get_icon_for_type(cls, stream_type):

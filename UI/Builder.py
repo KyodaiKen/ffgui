@@ -56,15 +56,12 @@ class Builder:
                 margin_top=0
             )
             btn.set_child(flowbox)
-            
-            # Store the current state on the button object for easy extraction
-            btn._current_value = value
 
             # Internal helper to refresh the UI
-            def refresh_ui(new_values):
-                btn._current_value = new_values
+            def refresh_ui(new_value):
+                btn._current_value = new_value
                 
-                Builder.build_pill(flowbox, new_values, no_target=True)
+                Builder.build_pill(flowbox, new_value, no_target=True)
                 
                 # Show a placeholder if empty
                 if not flowbox.get_first_child():
@@ -73,7 +70,7 @@ class Builder:
                     flowbox.append(lbl)
 
             # Initial population
-            refresh_ui(btn._current_value)
+            refresh_ui(value)
 
             def on_picker_clicked(_):
                 strings = {

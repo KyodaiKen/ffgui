@@ -71,6 +71,8 @@ class FFmpegCmdCompiler:
             cmd_parts.append("-map")
             cmd_parts.append(f"{file_idx}:{src_idx}")
 
+            FFmpegCmdCompiler._apply_disposition_deltas(cmd_parts, specifier, stream)
+
             if template_data:
                 # Codec
                 codec = template_data.get('codec', 'copy')
@@ -151,3 +153,19 @@ class FFmpegCmdCompiler:
             p = ":".join([f"{k}={v}" for k, v in e.get('params', {}).items()])
             res.append(f"{name}={p}" if p else name)
         return ",".join(res)
+    
+    @staticmethod
+    def _apply_disposition_deltas(cmd_parts, stream_specifier, stream_data):
+        original = set(stream_data.get('original_disposition', []))
+        requested = set(stream_data.get('disposition', []))
+        
+        # Determine what was added and what was removed
+        added = requested - original
+        removed = original - requested
+        
+        # FFmpeg uses +flag to add and -flag to remove
+        for flag in added:
+            cmd_parts.extend([f"-disposition:{stream_specifier}", f"+{flag}"])
+            
+        for flag in removed:
+            cmd_parts.extend([f"-disposition:{stream_specifier}", f"-{flag}"])
