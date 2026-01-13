@@ -9,8 +9,8 @@ from Models.TemplateDataModel import TemplateDataModel
 class TemplateManagerWindow(Gtk.ApplicationWindow):
     def __init__(self, parent_window, **kwargs):
         super().__init__(**kwargs, title="Manage Transcoding Templates")
-        self.set_default_size(600, 500)
-        self.set_size_request(600, 300)
+        self.set_default_size(720, 500)
+        self.set_size_request(720, 500)
         self.set_transient_for(parent_window)
         self.set_modal(True)
 

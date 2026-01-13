@@ -1,10 +1,10 @@
 import gi
-
-from UI.FlagsPickerWindow import FlagsPickerWindow
-from UI.PillBuilder import PillBuilder
 gi.require_version("Gtk", "4.0")
 from gi.repository import Gtk, Pango
-from UI.ParameterPickerWindow import ParameterPickerWindow
+
+from UI.SinglePickerWindow import SinglePickerWindow
+from UI.FlagsPickerWindow import FlagsPickerWindow
+from UI.Builder import Builder
 
 class ContainerParameterEditorWindow(Gtk.ApplicationWindow):
     def __init__(self, parent_window, job_data, on_save_callback=None, **kwargs):
@@ -87,18 +87,15 @@ class ContainerParameterEditorWindow(Gtk.ApplicationWindow):
             schema = schema_dict.get(name)
             self.add_row_to_list(name, value, schema)
 
-    def add_row_to_list(self, key, value=None, schema=None):
-        row_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=0)
+    def add_row_to_list(self, key, value, schema):
+        row_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, hexpand=True, spacing=6, margin_bottom=2, margin_end=6, margin_start=6, margin_top=2)
         
         lbl_key = Gtk.Label(label=key, xalign=0, width_request=120)
-        val_widget = self.create_value_widget(key, value, schema)
-        spacer = Gtk.Box(hexpand=True)
+        val_widget = Builder.build_value_widget(self, key, value, schema)
         btn_del = Gtk.Button(icon_name="user-trash-symbolic")
-        btn_del.add_css_class("flat")
 
         row_box.append(lbl_key)
         row_box.append(val_widget)
-        row_box.append(spacer)
         row_box.append(btn_del)
 
         row = Gtk.ListBoxRow(child=row_box)
@@ -107,7 +104,7 @@ class ContainerParameterEditorWindow(Gtk.ApplicationWindow):
 
         btn_del.connect("clicked", lambda _: self.lst_params.remove(row))
         self.lst_params.append(row)
-
+    """
     def create_value_widget(self, key, value, schema):
         if not schema:
             return Gtk.Entry(text=str(value if value is not None else ""), hexpand=True)
@@ -124,11 +121,7 @@ class ContainerParameterEditorWindow(Gtk.ApplicationWindow):
             flowbox = Gtk.FlowBox(
                 selection_mode=Gtk.SelectionMode.NONE,
                 column_spacing=4,
-                row_spacing=4,
-                margin_bottom=2,
-                margin_end=2,
-                margin_start=2,
-                margin_top=2
+                row_spacing=4
             )
             btn.set_child(flowbox)
             
@@ -139,7 +132,7 @@ class ContainerParameterEditorWindow(Gtk.ApplicationWindow):
             def refresh_ui(new_values):
                 btn._current_value = new_values
                 
-                PillBuilder.build(flowbox, new_values, no_target=True)
+                Builder.build_pill(flowbox, new_values, no_target=True)
                 
                 # Show a placeholder if empty
                 if not flowbox.get_first_child():
@@ -170,15 +163,20 @@ class ContainerParameterEditorWindow(Gtk.ApplicationWindow):
 
         # 2. Single-Select DropDown (for non-flag options)
         if options_list and p_type != "flags":
-            # ... existing DropDown logic from TemplateEditorWindow ...
             tech_values = [str(o.get('name')) for o in options_list]
             display_names = [f"{o.get('name')} ({o.get('descr')})" if o.get('descr') else str(o.get('name')) for o in options_list]
+            
             w = Gtk.DropDown(model=Gtk.StringList.new(display_names), hexpand=True)
             w._tech_values = tech_values
-            # ... (selection logic) ...
+            
+            # Determine initial selection
+            cur_val = str(value) if value is not None else str(schema.get("default", ""))
+            try:
+                if cur_val in tech_values:
+                    w.set_selected(tech_values.index(cur_val))
+            except ValueError:
+                pass
             return w
-
-        # ... keep Numeric/Boolean/Entry logic ...
         
         # 3. Booleans (Switches)
         if p_type in ["bool", "boolean"]:
@@ -187,19 +185,38 @@ class ContainerParameterEditorWindow(Gtk.ApplicationWindow):
 
         # 4. Numeric (Spinners)
         if any(t in p_type for t in ["int", "integer", "float", "double"]):
-            try:
-                v_min = float(schema.get("min", -2147483648))
-                v_max = float(schema.get("max", 2147483647))
-                v_cur = float(value) if value is not None else float(schema.get("default", 0))
-                
-                adj = Gtk.Adjustment(value=v_cur, lower=v_min, upper=v_max, step_increment=1, page_increment=10)
-                spin = Gtk.SpinButton(adjustment=adj, numeric=True)
-                spin.set_digits(1 if "float" in p_type or "double" in p_type else 0)
-                return spin
-            except: pass
+            # Check if this is a floating point value
+            is_float = any(x in p_type for x in ["float", "double"])
+            
+            v_min = self._parse_ffmpeg_num(schema.get("min"), -2147483648)
+            v_max = self._parse_ffmpeg_num(schema.get("max"), 2147483647)
+            
+            # Value handling
+            if value is None or value == "":
+                v_cur = self._parse_ffmpeg_num(schema.get("default"), 0)
+            else:
+                v_cur = self._parse_ffmpeg_num(value, 0)
+
+            # Use 0.1 steps for floats, 1.0 for integers
+            # step = 0.1 if is_float else 1.0
+            step = 1
+            adj = Gtk.Adjustment(value=v_cur, lower=v_min, upper=v_max,
+                                 step_increment=step, page_increment=step * 10)
+            
+            w = Gtk.SpinButton(adjustment=adj, numeric=True)
+            
+            if is_float:
+                # CRITICAL: This allows the 22.1 to actually be displayed
+                w.set_digits(1) 
+            else:
+                w.set_digits(0)
+
+            w.set_value(v_cur) 
+            return w
 
         # 5. Default (Entry)
         return Gtk.Entry(text=str(value if value is not None else ""), hexpand=True)
+    """
     
     def _update_flag_button_label(self, btn):
         """Updates the MenuButton text to show selected flags."""
@@ -214,13 +231,27 @@ class ContainerParameterEditorWindow(Gtk.ApplicationWindow):
     def on_add_param_clicked(self, _):
         schema_dict = self._get_format_schema_dict()
         
-        def on_selected(name, schema):
+        def on_selected(param):
             # Check if already in list to avoid duplicates
             existing = [r._key for r in self._get_all_rows()]
+            name = param.get("name", "")
             if name not in existing:
-                self.add_row_to_list(name, None, schema)
+                self.add_row_to_list(name, None, param)
 
-        picker = ParameterPickerWindow(self, schema_dict, on_selected)
+        plist = list(schema_dict.values())
+        plist.sort(key=lambda x: (x['name'].lower()))
+
+        picker = SinglePickerWindow(
+            parent_window = self,
+            options = plist,
+            strings = {
+                "title": f"Select a container format parameter",
+                "placeholder_text": "Search for a container format parameter..."
+            },
+            item_filter = None,
+            on_select = on_selected
+        )
+
         picker.present()
 
     def _get_all_rows(self):

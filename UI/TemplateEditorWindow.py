@@ -1,19 +1,14 @@
 import gi
-
+gi.require_version("Gdk", "4.0")
+from gi.repository import Gtk, Pango
+from Models.TemplateDataModel import TemplateDataModel
+from UI.SinglePickerWindow import SinglePickerWindow
+from UI.FilterParameterWindow import FilterParameterWindow
 from UI.FilterGraphEditorWindow import FilterGraphEditorWindow
 from UI.FlagsPickerWindow import FlagsPickerWindow
-from UI.PillBuilder import PillBuilder
-from UI.SinglePickerWindow import SinglePickerWindow
-gi.require_version("Gdk", "4.0")
-from gi.repository import Gtk, Gdk, Pango
-from Models.TemplateDataModel import TemplateDataModel
-from UI.CodecPickerWindow import CodecPickerWindow
-from UI.EncoderParameterPickerWindow import EncoderParameterPickerWindow
-from UI.FilterPickerWindow import FilterPickerWindow
-from UI.FilterParameterWindow import FilterParameterWindow
+from UI.Builder import Builder
 from UI.Core import UICore
 import copy
-import yaml
 
 class TemplateEditorWindow(Gtk.ApplicationWindow):
     def __init__(self, parent_window, template, on_save_callback=None, locked_type=None, clone_mode=False, **kwargs):
@@ -197,145 +192,9 @@ class TemplateEditorWindow(Gtk.ApplicationWindow):
         container.append(box)
         return lst
 
-    # --- WIDGET FACTORY ---
-
-    def _parse_ffmpeg_num(self, val, fallback=0):
-        """Extracts the first numeric part of a string like '51, 0 means auto'."""
-        if isinstance(val, (int, float)):
-            return float(val)
-        if not val:
-            return float(fallback)
-        try:
-            # Take the first word and strip non-numeric characters
-            clean = str(val).split(',')[0].split(' ')[0]
-            return float(''.join(c for c in clean if c.isdigit() or c in '.-'))
-        except (ValueError, IndexError):
-            return float(fallback)
-
-    def create_value_widget(self, key, value, schema=None):
-        if not schema and key:
-            pool = self.get_codec_params_list()
-            schema = next((p for p in pool if p.get('name') == key), None)
-
-        if not schema:
-            return Gtk.Entry(text=str(value if value is not None else ""), hexpand=True)
-
-        options_list = schema.get("options", [])
-        p_type = str(schema.get("type", "string")).lower()
-
-        # 1. Multi-Select Flags as Pills (Gtk.FlowBox)
-        if p_type == "flags" and options_list:
-            btn = Gtk.Button(hexpand=True)
-            btn.set_valign(Gtk.Align.CENTER)
-            
-            # The container for the pills inside the button
-            flowbox = Gtk.FlowBox(
-                selection_mode=Gtk.SelectionMode.NONE,
-                column_spacing=4,
-                row_spacing=4,
-                margin_bottom=0,
-                margin_end=0,
-                margin_start=0,
-                margin_top=0
-            )
-            btn.set_child(flowbox)
-            
-            # Store the current state on the button object for easy extraction
-            btn._current_value = value
-
-            # Internal helper to refresh the UI
-            def refresh_ui(new_values):
-                btn._current_value = new_values
-                
-                PillBuilder.build(flowbox, new_values, no_target=True)
-                
-                # Show a placeholder if empty
-                if not flowbox.get_first_child():
-                    lbl = Gtk.Label(label="None selected")
-                    lbl.add_css_class("dim-label")
-                    flowbox.append(lbl)
-
-            # Initial population
-            refresh_ui(btn._current_value)
-
-            def on_picker_clicked(_):
-                strings = {
-                    "title": f"Select {key}",
-                    "placeholder_text": "Search flags..."
-                }
-                # Open the window we created earlier
-                win = FlagsPickerWindow(
-                    parent=self, 
-                    options=options_list, 
-                    current_values=btn._current_value, 
-                    strings=strings, 
-                    on_apply=refresh_ui
-                )
-                win.present()
-
-            btn.connect("clicked", on_picker_clicked)
-            return btn
-
-        # 1. PRIORITY: If there are options, it's a DropDown, regardless of 'type'
-        
-        if options_list and not p_type == "flags":
-            tech_values = [str(o.get('name')) for o in options_list]
-            display_names = [f"{o.get('name')} ({o.get('descr')})" if o.get('descr') else str(o.get('name')) for o in options_list]
-            
-            w = Gtk.DropDown(model=Gtk.StringList.new(display_names), hexpand=True)
-            w._tech_values = tech_values
-            
-            # Determine initial selection
-            cur_val = str(value) if value is not None else str(schema.get("default", ""))
-            try:
-                if cur_val in tech_values:
-                    w.set_selected(tech_values.index(cur_val))
-            except ValueError:
-                pass
-            return w
-
-        # 2. NUMERIC: Logic for Spinners
-        
-        if any(t in p_type for t in ["int", "integer", "float", "double"]):
-            # Check if this is a floating point value
-            is_float = any(x in p_type for x in ["float", "double"])
-            
-            v_min = self._parse_ffmpeg_num(schema.get("min"), -2147483648)
-            v_max = self._parse_ffmpeg_num(schema.get("max"), 2147483647)
-            
-            # Value handling
-            if value is None or value == "":
-                v_cur = self._parse_ffmpeg_num(schema.get("default"), 0)
-            else:
-                v_cur = self._parse_ffmpeg_num(value, 0)
-
-            # Use 0.1 steps for floats, 1.0 for integers
-            # step = 0.1 if is_float else 1.0
-            step = 1
-            adj = Gtk.Adjustment(value=v_cur, lower=v_min, upper=v_max,
-                                 step_increment=step, page_increment=step * 10)
-            
-            w = Gtk.SpinButton(adjustment=adj, numeric=True)
-            
-            if is_float:
-                # CRITICAL: This allows the 22.1 to actually be displayed
-                w.set_digits(1) 
-            else:
-                w.set_digits(0)
-
-            w.set_value(v_cur) 
-            return w
-
-        # 3. BOOLEAN
-        if p_type in ["bool", "boolean"]:
-            active = str(value).lower() in ['true', '1', 'on'] if value is not None else bool(schema.get("default"))
-            return Gtk.Switch(active=active, halign=Gtk.Align.START)
-
-        return Gtk.Entry(text=str(value if value is not None else ""), hexpand=True)
-
     # --- ROW MANAGEMENT ---
 
-    def add_row_to_list(self, listbox, param, value="", schema=None):
+    def add_row_to_list(self, listbox, param, value):
         row_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=6, margin_top=4, margin_bottom=4, margin_end=4, margin_start=4)
 
         # 1. The Header (Key + Description)
@@ -368,7 +227,7 @@ class TemplateEditorWindow(Gtk.ApplicationWindow):
         
         action_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=10)
         
-        val_widget = self.create_value_widget(param['name'], value, schema)
+        val_widget = Builder.build_value_widget(self, param['name'], value, param)
         val_widget.set_hexpand(True) # Make the entry/button fill the space
         
         btn_del = Gtk.Button(icon_name="user-trash-symbolic")
@@ -388,45 +247,9 @@ class TemplateEditorWindow(Gtk.ApplicationWindow):
         btn_del.connect("clicked", lambda *_: listbox.remove(row))
         listbox.append(row)
 
-    # --- DATA FLOW ---
-
-    def get_codec_params_list(self):
-        data = getattr(self.app, 'ffmpeg_data', {})
-        if not data:
-            return []
-
-        all_params = []
-        stream_type = self.get_selected_type() # "video", "audio", etc.
-
-        # 1. Get Codec-Specific Params
-        codecs = data.get('codecs', [])
-        codec_obj = next((c for c in codecs if c.get('name') == self.selected_codec), None)
-        if codec_obj:
-            all_params.extend(codec_obj.get("parameters", []))
-
-        # 2. Get Global Params (Matching your Picker logic)
-        groups = data.get('globals', [])
-        for group in groups:
-            group_name = group.get("name", "").lower()
-
-            # Filter logic matching your EncoderParameterPickerWindow
-            should_include = (group_name == "av_options") or \
-                             (group_name == "video" and stream_type == "video") or \
-                             (group_name == "audio" and stream_type == "audio") or \
-                             (group_name == "subtitle" and stream_type == "subtitle")
-
-            if should_include:
-                # Add these global parameters to our search pool
-                all_params.extend(group.get("parameters", []))
-
-        return all_params
-
     # --- HANDLERS ---
 
     def on_add_encoder_param(self, _):
-        def on_selected(p_entry):
-            self.add_row_to_list(self.lst_encoder, p_entry, value=None)
-
         # Key = parameter name, Value = parameter object
         params_dict = {}
         ffmpeg_data = getattr(self.app, 'ffmpeg_data', {})
@@ -471,6 +294,9 @@ class TemplateEditorWindow(Gtk.ApplicationWindow):
                 (stream_type == "subtitle" and ctx.get("subtitle")) or
                 is_av_opt
             )
+        
+        def on_selected(p_entry):
+            self.add_row_to_list(self.lst_encoder, p_entry, value=None)
 
         picker = SinglePickerWindow(
             parent_window = self,
@@ -484,27 +310,6 @@ class TemplateEditorWindow(Gtk.ApplicationWindow):
         )
         picker.present()
 
-    def on_encoder_picker_clicked(self, button):
-        row = button.get_parent().get_parent()
-        def on_selected(k):
-            button.set_label(k)
-            row_box = row.get_child()
-            row_box.remove(row._val_widget)
-
-            # We call create_value_widget with no schema; it will look it up itself
-            new_w = self.create_value_widget(k, value=None, schema=None)
-
-            row_box.insert_child_after(new_w, button)
-            row._val_widget = new_w
-
-        picker = EncoderParameterPickerWindow(
-            self,
-            self.selected_codec,
-            self.get_selected_type(),
-            on_selected
-        )
-        picker.present()
-
     def update_codec_ui(self):
         while child := self.codec_box.get_first_child(): self.codec_box.remove(child)
         tag = Gtk.Box(css_classes=["codec-tag"])
@@ -515,7 +320,56 @@ class TemplateEditorWindow(Gtk.ApplicationWindow):
         self.codec_box.append(tag)
 
     def on_change_codec_clicked(self, _):
-        CodecPickerWindow(parent_window=self, codec_type=self.get_selected_type(), on_select=lambda c: (setattr(self, 'selected_codec', c), self.update_codec_ui())).present()
+        def on_select_codec(codec):
+            setattr(self, 'selected_codec', codec.get("name", ""))
+            self.update_codec_ui()
+
+        # Access the application instance to get the cached JSON data
+        ffmpeg_data = getattr(self.app, 'ffmpeg_data', {})
+        codecs_list = ffmpeg_data.get('codecs', [])
+
+        codecs_dict = {}
+        for codec in codecs_list:
+            c = codec.copy()
+            codecs_dict[c['name']] = c
+
+        # Always add the copy option
+        codecs_dict['copy'] = {
+            "name": "copy",
+            "descr": "Copy (no transcoding)",
+            "flags": {},
+            "parameters": []
+        }
+
+        # Convert the deduplicated, prioritized dict back to a list
+        codecs = list(codecs_dict.values())
+
+        # Sort
+        codecs.sort(key=lambda x: (x['name'].lower()))
+
+        stream_type = self.get_selected_type()
+
+        def is_parameter_allowed(codec):
+            flags = codec.get("flags", {})
+            
+            return (
+                ((stream_type == "video" and flags.get("video")) or
+                (stream_type == "audio" and flags.get("audio")) or
+                (stream_type == "subtitle" and flags.get("subtitle")) and
+                flags.get("encoder"))
+            )
+        
+        picker = SinglePickerWindow(
+            parent_window = self,
+            options = codecs,
+            strings = {
+                "title": f"Select a codec",
+                "placeholder_text": "Search for a codec..."
+            },
+            item_filter = is_parameter_allowed,
+            on_select = on_select_codec
+        )
+        picker.present()
 
     def on_type_changed(self, *args):
         self.template['type'] = self.get_selected_type()
@@ -708,11 +562,35 @@ class TemplateEditorWindow(Gtk.ApplicationWindow):
         editor.present()
 
     def on_add_filter(self, _):
-        def on_filter_selected(filter_obj):
+        def on_filter_selected(filter):
             # Immediately open the parameter config for the chosen filter
-            self.open_filter_config(filter_obj, {})
+            self.open_filter_config(filter, {})
 
-        picker = FilterPickerWindow(self, self.get_selected_type(), on_filter_selected)
+        app = Gtk.Application.get_default()
+        all_filters = getattr(app, 'ffmpeg_data', {}).get('filters', [])
+        
+        filters_dict = {}
+        for filter in all_filters:
+            f = filter.copy()
+            filters_dict[f['name']] = f
+
+        all_filters = list(filters_dict.values())
+        all_filters.sort(key=lambda x: (x['name'].lower()))
+
+        def is_parameter_allowed(filter):
+            return not filter.get("is_complex", False)
+        
+        picker = SinglePickerWindow(
+            parent_window = self,
+            options = all_filters,
+            strings = {
+                "title": f"Select a filter",
+                "placeholder_text": "Search for a filter..."
+            },
+            item_filter = is_parameter_allowed,
+            on_select = on_filter_selected
+        )
+
         picker.present()
 
     def open_filter_config(self, filter_obj, current_params, existing_row=None):

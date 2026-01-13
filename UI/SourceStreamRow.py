@@ -1,6 +1,6 @@
 import gi
 
-from UI.PillBuilder import PillBuilder
+from UI.Builder import Builder
 gi.require_version("Gdk", "4.0")
 from gi.repository import Gtk, Pango
 from UI.MetadataManagerWindow import MetadataManagerWindow
@@ -102,7 +102,7 @@ class SourceStreamRow(Gtk.ListBoxRow):
             self.dispositions.remove(child)
             
         # Rebuild with the fresh list
-        PillBuilder.build(self.dispositions, self.stream_disposition)
+        Builder.build_pill(self.dispositions, self.stream_disposition)
 
     def on_search_lng_click(self, button):
         # We pass the callback exactly like we did for the Disposition picker
@@ -157,5 +157,5 @@ class SourceStreamRow(Gtk.ListBoxRow):
         self.dispositions.set_margin_end(0)
         self.dispositions.set_margin_top(0)
         self.dispositions.set_margin_bottom(0)
-        PillBuilder.build(self.dispositions, disposition_str)
+        Builder.build_pill(self.dispositions, disposition_str)
         return self.dispositions

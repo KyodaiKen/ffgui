@@ -1,8 +1,9 @@
 import gi
 
-from UI.FilterParameterPickerWindow import FilterParameterPickerWindow
+from UI.Builder import Builder
 gi.require_version("Gtk", "4.0")
 from gi.repository import Gtk
+from UI.SinglePickerWindow import SinglePickerWindow
 
 class FilterParameterWindow(Gtk.ApplicationWindow):
     def __init__(self, parent_window, filter_obj, current_values, on_save):
@@ -47,7 +48,16 @@ class FilterParameterWindow(Gtk.ApplicationWindow):
                 self.add_param_row(param_schema, p_val)
 
     def on_add_param_clicked(self, _):
-        picker = FilterParameterPickerWindow(self, self.filter_obj, self.add_param_row)
+        picker = SinglePickerWindow(
+            parent_window = self,
+            options = self.filter_obj.get("parameters", []),
+            strings = {
+                "title": f"Select a filter",
+                "placeholder_text": "Search for a filter..."
+            },
+            item_filter = None,
+            on_select = self.add_param_row
+        )
         picker.present()
 
     def add_param_row(self, param_schema, value=None):
@@ -65,7 +75,7 @@ class FilterParameterWindow(Gtk.ApplicationWindow):
         name_lbl.add_css_class("caption-heading")
         
         # Reuse TemplateEditor logic for the widget
-        val_widget = self.template_editor.create_value_widget(name, value, schema=param_schema)
+        val_widget = Builder.build_value_widget(self, name, value, schema=param_schema)
         val_widget.set_hexpand(True)
 
         btn_del = Gtk.Button(icon_name="user-trash-symbolic")

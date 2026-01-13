@@ -1,11 +1,10 @@
 import gi
-
-from UI.ContainerParameterEditorWindow import ContainerParameterEditorWindow
 gi.require_version("Gdk", "4.0")
 from gi.repository import GLib, Gtk, Gio, Gdk, Pango
 from UI.SourceStreamRow import SourceStreamRow
-from UI.ContainerPickerWindow import ContainerPickerWindow
+from UI.SinglePickerWindow import SinglePickerWindow
 from UI.MetadataManagerWindow import MetadataManagerWindow
+from UI.ContainerParameterEditorWindow import ContainerParameterEditorWindow
 from Models.JobsDataModel import JobsDataModel
 from Core.Utils import format_duration, get_file_title
 
@@ -250,6 +249,7 @@ class JobSetupWindow(Gtk.ApplicationWindow):
         final_data["output"]["directory"] = self.entry_output_dir.get_text()
         final_data["output"]["filename"] = self.entry_output_filename.get_text()
         final_data["output"]["container"] = self.selected_container
+        final_data["output"]["container_parameters"] = self.job_data["output"].get("container_parameters", [])
         final_data["sources"]["files"] = self.source_paths
 
         # --- NEW: Calculate Durations for Metadata ---
@@ -342,11 +342,43 @@ class JobSetupWindow(Gtk.ApplicationWindow):
         self.container_box.append(tag)
 
     def on_change_container_clicked(self, btn):
-        picker = ContainerPickerWindow(self, self.selected_container, self.apply_container)
+        formats_list = getattr(self.app, 'ffmpeg_data', {}).get('formats', [])
+
+        formats_dict = {}
+        for format in formats_list:
+            f = format.copy()
+            formats_dict[f['name']] = f
+
+        formats_dict['auto'] = {
+            "name": "auto",
+            "descr": "Let FFMPEG decide which container to use by file extension",
+            "aliases": [],
+            "is_muxer": True,
+            "is_demuxer": False,
+            "parameters": [],
+            "extensions": []
+        }
+
+        formats_list = list(formats_dict.values())
+        formats_list.sort(key=lambda x: (x['name'].lower()))
+
+        def is_filter_valid(filter):
+            return filter.get("is_muxer", False)
+
+        picker = SinglePickerWindow(
+            parent_window = self,
+            options = formats_list,
+            strings = {
+                "title": f"Select a container format",
+                "placeholder_text": "Search for a container..."
+            },
+            item_filter = is_filter_valid,
+            on_select = self.apply_container
+        )
         picker.present()
 
     def apply_container(self, new_format):
-        self.selected_container = new_format
+        self.selected_container = new_format.get('name', "")
         self.update_container_ui()
 
     def on_manage_global_meta(self, _):
@@ -355,7 +387,6 @@ class JobSetupWindow(Gtk.ApplicationWindow):
 
     def on_manage_global_params(self, _):
         if self.selected_container == "auto":
-
             return
         win = ContainerParameterEditorWindow(self, self.job_data)
         win.present()

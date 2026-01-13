@@ -1,0 +1,9 @@
+type: video
+codec: libsvtav1
+parameters:
+    options:
+        preset: 5
+        crf: 32
+filters:
+    mode: simple
+    entries: []

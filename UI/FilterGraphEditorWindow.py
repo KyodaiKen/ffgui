@@ -1,6 +1,7 @@
 import gi
 gi.require_version("Gtk", "4.0")
 from gi.repository import Gtk, Gdk, Pango
+from UI.SinglePickerWindow import SinglePickerWindow
 
 class FilterGraphEditorWindow(Gtk.ApplicationWindow):
     def __init__(self, parent_window, filter_data):
@@ -48,15 +49,34 @@ class FilterGraphEditorWindow(Gtk.ApplicationWindow):
         main_box.append(scroll)
 
     def on_add_filter_clicked(self, _):
-        # We use a special "all" type to show every filter in the picker
-        from UI.FilterPickerWindow import FilterPickerWindow
-        
-        def on_selected(filter_obj):
+        def on_selected(filter):
             # Center the new node in the current view
-            self.add_node_detailed(filter_obj, 100, 100)
+            self.add_node_detailed(filter, 100, 100)
 
-        # Passing None or a specific flag to show all filters
-        picker = FilterPickerWindow(self, stream_type="video", on_select=on_selected)
+        # Access the application instance to get the cached JSON data
+        app = Gtk.Application.get_default()
+        all_filters = getattr(app, 'ffmpeg_data', {}).get('filters', [])
+
+        # Create a copy of the filters
+        for filter in all_filters:
+            filter = filter.copy()
+
+        # Sort
+        all_filters.sort(key=lambda x: (x['name'].lower()))
+
+        def is_parameter_allowed(filter):
+            return filter.get("is_complex", False)
+        
+        picker = SinglePickerWindow(
+            parent_window = self,
+            options = all_filters,
+            strings = {
+                "title": f"Select a filter",
+                "placeholder_text": "Search for a filter..."
+            },
+            item_filter = is_parameter_allowed,
+            on_select = on_selected
+        )
         picker.present()
 
     def add_node_detailed(self, filter_obj, x, y):
