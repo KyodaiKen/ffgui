@@ -155,20 +155,25 @@ class SettingsWindow(Gtk.Window):
         self.app.show_init_progress()
 
     def validate_and_save(self):
-        """Extracted validation logic to return True/False."""
         new_path_str = self.entry_ff_path.get_text().strip()
 
         if new_path_str:
             path_obj = Path(new_path_str)
+            
+            # --- RESOLVE RELATIVE PATHS ---
+            if not path_obj.is_absolute():
+                path_obj = (Path(self.app.base_dir) / path_obj).resolve()
+
             ext = ".exe" if platform.system() == "Windows" else ""
 
+            # Now check the resolved absolute path
             if not path_obj.is_dir():
-                self.show_error("Invalid Path", "The selected path is not a directory.")
+                self.show_error("Invalid Path", f"The directory does not exist:\n{path_obj}")
                 return False
 
             for binary in [f"ffmpeg{ext}", f"ffprobe{ext}"]:
                 if not (path_obj / binary).exists():
-                    self.show_error("Missing Executable", f"Could not find {binary} in folder.")
+                    self.show_error("Missing Executable", f"Could not find {binary} in:\n{path_obj}")
                     return False
 
         # Save to YAML

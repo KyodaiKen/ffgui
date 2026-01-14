@@ -7,26 +7,15 @@ import threading
 import ctypes
 import json
 
-# DEBUG: Print environment info to console
-print(f"Executable: {sys.executable}")
-print(f"Python Path: {sys.path}")
 
-import ctypes
-
+# --- Path Configuration ---
+# This works for both MSYS2 dev and PyInstaller .exe
 if getattr(sys, 'frozen', False):
-    app_dir = os.path.dirname(os.path.abspath(sys.executable))
-    
-    # Manually pre-load the most suspicious DLLs
-    # If one of these lines fails, it will tell us exactly which DLL is broken
-    try:
-        ctypes.CDLL(os.path.join(app_dir, 'libwinpthread-1.dll'))
-        ctypes.CDLL(os.path.join(app_dir, 'zlib1.dll'))
-        ctypes.CDLL(os.path.join(app_dir, 'libintl-8.dll'))
-        ctypes.CDLL(os.path.join(app_dir, 'libglib-2.0-0.dll'))
-    except Exception as e:
-        print(f"PRE-LOAD ERROR: {e}")
+    base_path_app = sys._MEIPASS  # PyInstaller temporary extraction folder
+else:
+    base_path_app = os.path.dirname(os.path.abspath(__file__))
 
-# --- 2. GTK Imports ---
+# --- GTK Imports ---
 import gi
 gi.require_version('Gtk', '4.0')
 gi.require_version('Adw', '1')
@@ -87,6 +76,26 @@ class FFGuiApp(Gtk.Application):
                 # Since there is no index.theme, GTK doesn't know 
                 # to look for 'icon-name-symbolic.svg'. 
                 # It only looks for 'icon-name.svg'.
+
+            import winreg
+            # Path to the Windows "Personalize" registry key
+            try:
+                # Access the Windows Registry key for 'Personalize'
+                registry_path = r"Software\Microsoft\Windows\CurrentVersion\Themes\Personalize"
+                with winreg.OpenKey(winreg.HKEY_CURRENT_USER, registry_path) as key:
+                    # AppsUseLightTheme: 0 = Dark Mode, 1 = Light Mode
+                    value, _ = winreg.QueryValueEx(key, "AppsUseLightTheme")
+                    
+                    style_manager = Adw.StyleManager.get_default()
+                    if value == 0:
+                        style_manager.set_color_scheme(Adw.ColorScheme.PREFER_DARK)
+                    else:
+                        style_manager.set_color_scheme(Adw.ColorScheme.PREFER_LIGHT)
+            except Exception as e:
+                print(f"Theme detection failed: {e}")
+                # Default to system standard if registry check fails
+                Adw.StyleManager.get_default().set_color_scheme(Adw.ColorScheme.PREFER_LIGHT)
+
 
     def _load_global_css(self):
         css_provider = Gtk.CssProvider()
@@ -211,13 +220,16 @@ class FFGuiApp(Gtk.Application):
             if not self.ffmpeg_exec.endswith(".exe"): self.ffmpeg_exec += ".exe"
             if not self.ffprobe_exec.endswith(".exe"): self.ffprobe_exec += ".exe"
 
-        if not self.ffmpeg_path:
+            if not self.ffmpeg_path:
+                self.ffmpeg_full_exec_path = str(self.base_dir / Path("codecs") / Path("ffmpeg") / self.ffmpeg_exec)
+                self.ffprobe_full_exec_path = str(self.base_dir / Path("codecs") / Path("ffmpeg") / self.ffprobe_exec)
+            else:
+                base = Path(self.ffmpeg_path)
+                self.ffmpeg_full_exec_path = str(base / self.ffmpeg_exec)
+                self.ffprobe_full_exec_path = str(base / self.ffprobe_exec)
+        else:
             self.ffmpeg_full_exec_path = self.ffmpeg_exec
             self.ffprobe_full_exec_path = self.ffprobe_exec
-        else:
-            base = Path(self.ffmpeg_path)
-            self.ffmpeg_full_exec_path = str(base / self.ffmpeg_exec)
-            self.ffprobe_full_exec_path = str(base / self.ffprobe_exec)
 
     def do_startup(self):
         Gtk.Application.do_startup(self)

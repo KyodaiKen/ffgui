@@ -1,6 +1,7 @@
 from abc import ABC, abstractmethod
 from datetime import timedelta
 from fractions import Fraction
+import platform
 import subprocess
 import sys
 import struct
@@ -49,7 +50,10 @@ class FFmpegBaseParser(ABC):
     def _run_cmd(self, args):
         cmd = [self.ffmpeg_path, "-hide_banner"] + args
         try:
-            result = subprocess.run(cmd, capture_output=True, text=True, encoding='utf-8', errors='ignore')
+            flags = 0
+            if os.name != 'nt':
+                flags = 0x08000000 # CREATE_NO_WINDOW
+            result = subprocess.run(cmd, capture_output=True, text=True, encoding='utf-8', creationflags=flags, errors='ignore')
             return result.stdout
         except FileNotFoundError: return ""
 
@@ -375,7 +379,10 @@ class FFmpegFilterParser(FFmpegBaseParser):
     def parse_list(self):
         output = self._run_cmd(["-filters"])
         filters = []
-        pattern = re.compile(r"^\s([T.][S.][C.])\s+([\w]+)\s+([AVN|]*->[AVN|]*)\s+(.*)$")
+        
+        # Changed: The first group now matches 2 or 3 characters ([T.][S.][C.]?)
+        # This makes the 'C' column optional.
+        pattern = re.compile(r"^\s([T.][S.][C.]?)\s+([\w-]+)\s+([AVN|]*->[AVN|]*)\s+(.*)$")
         
         for line in output.splitlines():
             match = pattern.match(line)
@@ -386,8 +393,6 @@ class FFmpegFilterParser(FFmpegBaseParser):
                 inputs = self._map_io_types(in_part)
                 outputs = self._map_io_types(out_part)
                 
-                # Logic for is_complex: 
-                # True if multiple inputs, multiple outputs, or dynamic 'N'
                 is_complex = len(inputs) > 1 or len(outputs) > 1 or "N" in io_str
 
                 self._filter_io_map[name] = {
@@ -396,6 +401,7 @@ class FFmpegFilterParser(FFmpegBaseParser):
                     "is_complex": is_complex
                 }
 
+                # Safe flag mapping: check if the character exists before comparing
                 filters.append({
                     "name": name,
                     "descr": descr.strip(),
@@ -406,7 +412,8 @@ class FFmpegFilterParser(FFmpegBaseParser):
                     "flags": {
                         "timeline": flags_raw[0] == 'T',
                         "slice_threading": flags_raw[1] == 'S',
-                        "command_support": flags_raw[2] == 'C'
+                        # Only set True if the 3rd char exists AND is 'C'
+                        "command_support": flags_raw[2] == 'C' if len(flags_raw) > 2 else False
                     }
                 })
         return filters
@@ -637,7 +644,9 @@ class FFmpegMediaInfoParser:
         ]
 
         try:
-            result = subprocess.run(cmd, capture_output=True, text=True, check=True)
+            if os.name != 'nt':
+                flags = 0x08000000 # CREATE_NO_WINDOW
+            result = subprocess.run(cmd, capture_output=True, text=True, creationflags=flags, check=True)
             raw_data = json.loads(result.stdout)
             return self._refine_data(raw_data)
         except Exception as e:
