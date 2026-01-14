@@ -10,6 +10,10 @@ import json
 
 # --- Path Configuration ---
 # This works for both MSYS2 dev and PyInstaller .exe
+if os.name == 'nt':
+    # Suppress D-Bus warning on Windows
+    os.environ["DBUS_SESSION_BUS_ADDRESS"] = "null:"
+    
 if getattr(sys, 'frozen', False):
     base_path_app = sys._MEIPASS  # PyInstaller temporary extraction folder
 else:
@@ -160,7 +164,7 @@ class FFGuiApp(Gtk.Application):
 
             /* TemplateEditorWindow */
             .codec-tag { background-color: alpha(@theme_fg_color, 0.05); border: 1px solid mix(@theme_fg_color, @theme_bg_color, 0.8); border-radius: 6px; padding: 2px; }
-            .codec-tag label { margin-start: 8px; margin-end: 8px; font-weight: bold; }
+            .codec-tag label { margin-left: 6px; margin-right: 6px; font-weight: bold; }
             dropdown > button > box > stack > row.activatable { background-color: transparent; }
             #template-editor-column popover box { min-width: 180px; }
             .warning-badge { 
@@ -172,7 +176,7 @@ class FFGuiApp(Gtk.Application):
             }
         """
         
-        css_provider.load_from_data(global_css, -1)
+        css_provider.load_from_string(global_css)
         
         # Apply to the default display
         Gtk.StyleContext.add_provider_for_display(
