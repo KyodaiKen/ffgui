@@ -51,9 +51,11 @@ class FFmpegBaseParser(ABC):
         cmd = [self.ffmpeg_path, "-hide_banner"] + args
         try:
             flags = 0
-            if os.name != 'nt':
+            if os.name == 'nt':
                 flags = 0x08000000 # CREATE_NO_WINDOW
-            result = subprocess.run(cmd, capture_output=True, text=True, encoding='utf-8', creationflags=flags, errors='ignore')
+                result = subprocess.run(cmd, capture_output=True, text=True, encoding='utf-8', creationflags=flags, errors='ignore')
+            else:
+                result = subprocess.run(cmd, capture_output=True, text=True, encoding='utf-8', errors='ignore')
             return result.stdout
         except FileNotFoundError: return ""
 
@@ -644,9 +646,11 @@ class FFmpegMediaInfoParser:
         ]
 
         try:
-            if os.name != 'nt':
+            if os.name == 'nt':
                 flags = 0x08000000 # CREATE_NO_WINDOW
-            result = subprocess.run(cmd, capture_output=True, text=True, creationflags=flags, check=True)
+                result = subprocess.run(cmd, capture_output=True, text=True, creationflags=flags, check=True)
+            else:
+                result = subprocess.run(cmd, capture_output=True, text=True, check=True)
             raw_data = json.loads(result.stdout)
             return self._refine_data(raw_data)
         except Exception as e:

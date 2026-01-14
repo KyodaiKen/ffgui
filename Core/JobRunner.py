@@ -58,20 +58,25 @@ class JobRunner:
         # Use the found duration, or fallback to 1 to avoid division by zero
         total_duration_us = max_duration if max_duration > 0 else 1
 
-        # Prevent a terminal from opening on Windows
-        flags = 0
-        if os.name != 'nt':
-            flags = 0x08000000 # CREATE_NO_WINDOW
-        
         # 2. Launch Process
-        process = subprocess.Popen(
-            full_cmd,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.STDOUT, # Pipe stderr to stdout to see errors in the log
-            creationflags=flags,
-            universal_newlines=True,
-            bufsize=1
-        )
+        if os.name == 'nt':
+            flags = 0x08000000 # CREATE_NO_WINDOW
+            process = subprocess.Popen(
+                full_cmd,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.STDOUT, # Pipe stderr to stdout to see errors in the log
+                creationflags=flags,  # Prevent a terminal from opening on Windows
+                universal_newlines=True,
+                bufsize=1
+            )
+        else:
+            process = subprocess.Popen(
+                full_cmd,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.STDOUT, # Pipe stderr to stdout to see errors in the log
+                universal_newlines=True,
+                bufsize=1
+            )
 
         progress_data = {}
         while True:
