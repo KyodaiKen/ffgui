@@ -18,105 +18,94 @@ class FFmpegCmdCompiler:
     @staticmethod
     def gen_cmd_from_job(job):
         cmd_parts = ["-y"]
-
-        # 1. Access files from the standardized 'sources' key
         src_files = job.get('sources', {}).get('files', [])
+        streams = job.get('sources', {}).get('streams', [])
+        active_streams = [s for s in streams if s.get('active')]
 
-        print(job)
-        
         if not src_files:
-            print("CRITICAL: No source files found in job structure!")
             return []
 
-        for f in src_files:
-            cmd_parts.extend(["-i", f'{f}'])
+        # --- PHASE 1: INPUTS ---
+        # We need to check if any stream belonging to a file is in 'copy' mode
+        for f_idx, f_path in enumerate(src_files):
+            # Check if all active streams for THIS file use 'copy'
+            file_streams = [s for s in active_streams if s.get('file') == f_idx]
+            
+            # If all active streams for this specific file are 'copy', 
+            # we can use fast input seeking for the whole file.
+            if file_streams and all(FFmpegCmdCompiler._is_copy_stream(s) for s in file_streams):
+                # Note: This assumes all streams in the file share the same trim.
+                # If they differ, we take the first one found.
+                first_s = file_streams[0]
+                ss = first_s.get('trim_start')
+                t = first_s.get('trim_length')
+                
+                if ss: cmd_parts.extend(["-ss", ss])
+                if t:  cmd_parts.extend(["-t", t])
 
-        # 2. Setup Counters
+            cmd_parts.extend(["-i", str(f_path)])
+
+        # --- PHASE 2: MAPPING AND OUTPUT OPTIONS ---
         type_counters = {"video": 0, "audio": 0, "subtitle": 0}
-        active_streams = [s for s in job.get('sources', {}).get('streams', []) if s.get('active')]
-
-        # We already need the container format selection here for _apply_disposition_deltas
-        # so it can map disposition for matroska correctly if the container matroska is requested:
         output_cfg = job.get('output', {})
         container_short_name = output_cfg.get('container', 'auto')
 
         for stream in active_streams:
-            # A. Resolve Template First to find the true stream type
-            template_val = stream.get('template')
-            template_data = None
-            
-            if isinstance(template_val, str):
-                from gi.repository import Gtk
-                app = Gtk.Application.get_default()
-                template_data = TemplateDataModel.get_template_by_name(app, template_val)
-            elif isinstance(template_val, dict):
-                template_data = template_val
-
-            # B. Determine Type (Try template first, then stream, then default to video)
-            s_type = "video"
-            if template_data and template_data.get('type'):
-                s_type = template_data.get('type').lower()
-            elif stream.get('type'):
-                s_type = stream.get('type').lower()
-
+            template_data = FFmpegCmdCompiler._resolve_template(stream)
+            s_type = FFmpegCmdCompiler._determine_type(stream, template_data)
             t_char = FFmpegCmdCompiler.TYPE_MAP.get(s_type, 'v')
             
-            # C. Mapping Indices
             file_idx = stream.get('file', 0)
             src_idx = stream.get('index', 0)
             
-            if s_type not in type_counters:
-                type_counters[s_type] = 0
-            
-            out_idx = type_counters[s_type]
+            out_idx = type_counters.get(s_type, 0)
             specifier = f":{t_char}:{out_idx}"
             
-            # D. Compile Command Parts
-            cmd_parts.append("-map")
-            cmd_parts.append(f"{file_idx}:{src_idx}")
+            # Map the stream
+            cmd_parts.extend(["-map", f"{file_idx}:{src_idx}"])
 
+            # TRIM LOGIC: If NOT copy, put trim parameters AFTER map
+            if not FFmpegCmdCompiler._is_copy_stream(stream):
+                ss = stream.get('trim_start')
+                t = stream.get('trim_length')
+                if ss: cmd_parts.extend([f"-ss{specifier}", ss])
+                if t:  cmd_parts.extend([f"-t{specifier}", t])
+
+            # Apply Template Codecs/Params
             if template_data:
-                # Codec
                 codec = template_data.get('codec', 'copy')
-                cmd_parts.append(f"-c{specifier}")
-                cmd_parts.append(f"{codec}")
+                cmd_parts.extend([f"-c{specifier}", codec])
 
-                # Parameters
                 params = template_data.get('parameters', {}).get('options', {})
                 for key, val in params.items():
                     if key in FFmpegCmdCompiler.GLOBAL_OPTIONS:
-                        cmd_parts.append(f"-{key}")
-                        cmd_parts.append(f"{val}")
+                        cmd_parts.extend([f"-{key}", str(val)])
                     else:
-                        cmd_parts.append(f"-{key}{specifier}")
-                        cmd_parts.append(f"{val}")
+                        cmd_parts.extend([f"-{key}{specifier}", str(val)])
 
                 # Filters
                 filter_data = template_data.get('filters', {})
                 if filter_data.get('mode') == 'simple':
                     f_str = FFmpegCmdCompiler._build_simple_filter_string(filter_data.get('entries', []))
                     if f_str:
-                        cmd_parts.append(f"-{t_char}f{specifier}")
-                        cmd_parts.append(f"\"{f_str}\"")
+                        cmd_parts.extend([f"-{t_char}f{specifier}", f_str])
 
             FFmpegCmdCompiler._apply_disposition_deltas(container_short_name, cmd_parts, specifier, stream)
-
-            # E. Increment Counter for this type
-            type_counters[s_type] += 1
+            type_counters[s_type] = out_idx + 1
 
         cmd_parts += ["-progress", "-"] #Add progress to stdout redirection
 
-        # 2. Setup Output Metadata
+        # Setup Output Metadata
         out_dir = output_cfg.get('directory', '.')
         out_filename = (output_cfg.get('filename') or "").strip()
 
-        # 3. Determine Source Path for naming
+        # Determine Source Path for naming
         # Safely get the first file from 'src_files'
         source_path = None
         if src_files and len(src_files) > 0:
             source_path = Path(src_files[0])
 
-        # 4. Final Path Generation
+        # Final Path Generation
         if container_short_name == "auto":
             if not out_filename and source_path:
                 # Use original filename and extension
@@ -191,3 +180,37 @@ class FFmpegCmdCompiler:
         else:
             cmd_parts.append(f"-disposition{stream_specifier}")
             cmd_parts.append("0")
+
+    def _determine_type(stream, template_data):
+        """Determines the stream type, prioritizing template over stream metadata."""
+        if template_data and template_data.get('type'):
+            return template_data.get('type').lower()
+        if stream.get('type'):
+            return stream.get('type').lower()
+        return "video" # Fallback
+
+    @staticmethod
+    def _is_copy_stream(stream):
+        """Helper to check if a stream is set to copy mode."""
+        template_val = stream.get('template')
+        if not template_val:
+            return True # Default is copy
+        
+        # If it's a string, we need to look it up
+        if isinstance(template_val, str):
+            app = Gtk.Application.get_default()
+            template_data = TemplateDataModel.get_template_by_name(app, template_val)
+            if template_data:
+                return template_data.get('codec') == 'copy'
+        elif isinstance(template_val, dict):
+            return template_val.get('codec') == 'copy'
+        
+        return True
+
+    @staticmethod
+    def _resolve_template(stream):
+        template_val = stream.get('template')
+        if isinstance(template_val, str):
+            app = Gtk.Application.get_default()
+            return TemplateDataModel.get_template_by_name(app, template_val)
+        return template_val

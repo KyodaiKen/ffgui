@@ -6,7 +6,7 @@ from UI.SinglePickerWindow import SinglePickerWindow
 from UI.MetadataManagerWindow import MetadataManagerWindow
 from UI.ContainerParameterEditorWindow import ContainerParameterEditorWindow
 from Models.JobsDataModel import JobsDataModel
-from Core.Utils import format_duration, get_file_title
+from Core.Utils import seconds_to_time, get_file_title
 
 class JobSetupWindow(Gtk.ApplicationWindow):
     def __init__(self, parent_window, mode="create", job=None, **kwargs):
@@ -113,18 +113,6 @@ class JobSetupWindow(Gtk.ApplicationWindow):
         self.grid.attach(self.lbl_strmlst, 0, 2, 1, 1)
         self.grid.attach(self.scroll_streams, 1, 2, 2, 1)   
 
-        # Row for Destination Streams
-        self.lbl_dest_strmlst = Gtk.Label(halign=Gtk.Align.END, valign=Gtk.Align.START)
-        self.lbl_dest_strmlst.set_text("Destination Streams: ")
-        self.lst_dest_streams = Gtk.ListBox(hexpand = True)
-        self.lst_dest_streams.set_selection_mode(Gtk.SelectionMode.NONE)
-        self.lst_dest_streams.set_name("streams_list")
-        self.scroll_dest_streams = Gtk.ScrolledWindow()
-        self.scroll_dest_streams.set_child(self.lst_dest_streams)
-        self.scroll_dest_streams.set_size_request(-1, 140)
-        self.grid.attach(self.lbl_dest_strmlst, 0, 3, 1, 1)
-        self.grid.attach(self.scroll_dest_streams, 1, 3, 2, 1)   
-
         # Row 4: Output Configuration Header
         self.lbl_output = Gtk.Label(label="Output Settings: ", halign=Gtk.Align.END, valign=Gtk.Align.START)
         self.lbl_output.set_margin_top(4) # Align with the header text
@@ -216,7 +204,11 @@ class JobSetupWindow(Gtk.ApplicationWindow):
                         "original_disposition": s.get("original_disposition", []),
                         "disposition": s.get("disposition", []),
                         "language": s.get("language", ""),
-                        "metadata": s.get("metadata", {}) 
+                        "metadata": s.get("metadata", {}),
+                        "trim_start": s.get("trim_start", ""),
+                        "trim_length": s.get("trim_length", ""),
+                        "trim_end": s.get("trim_end", ""),
+                        "stream_delay": s.get("stream_delay", "0")
                     }
             except Exception as e:
                 print(f"Error mapping stream: {e}")
@@ -285,7 +277,11 @@ class JobSetupWindow(Gtk.ApplicationWindow):
                     "disposition": settings.get("disposition", []),
                     "original_disposition": settings.get("original_disposition", []),
                     "language": settings.get("language", ""),
-                    "duration": file_durations.get(path, 0)
+                    "duration": file_durations.get(path, 0),
+                    "trim_start": settings.get("trim_start", ""),
+                    "trim_length": settings.get("trim_length", ""),
+                    "trim_end": settings.get("trim_end", ""),
+                    "stream_delay": settings.get("stream_delay", "0")
                 }
                 final_data["sources"]["streams"].append(stream_entry)
             except ValueError:
@@ -449,7 +445,11 @@ class JobSetupWindow(Gtk.ApplicationWindow):
                     "disposition": row.stream_disposition,
                     "original_disposition": getattr(row, 'original_disposition', []),
                     "language": row.ent_lng.get_text(),
-                    "metadata": row.stream_metadata
+                    "metadata": row.stream_metadata,
+                    "trim_start": row.ent_tstart.get_text(),
+                    "trim_length": row.ent_tlen.get_text(),
+                    "trim_end": row.ent_tend.get_text(),
+                    "stream_delay": row.ent_sdly.get_text()
                 }
             row = row.get_next_sibling()
 
@@ -479,10 +479,9 @@ class JobSetupWindow(Gtk.ApplicationWindow):
                     raise Exception(media_info["error"])
 
                 fmt = media_info.get('format', {})
-                # (Existing bitrate/duration logic...)
                 raw_bitrate = fmt.get('bit_rate')
                 container_br_str = f"{int(raw_bitrate) // 1000} kbps" if raw_bitrate else ""
-                duration_str = format_duration(float(fmt.get('duration', 0)))
+                duration_str = seconds_to_time(float(fmt.get('duration', 0)))
 
                 # --- Create Header Row ---
                 header_hbox = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=12)
@@ -518,6 +517,12 @@ class JobSetupWindow(Gtk.ApplicationWindow):
                     # Determine which metadata to use (Cached > Source)
                     initial_meta = cached_data.get("metadata", source_stream_tags) if cached_data else source_stream_tags
 
+                    # Get duration for this specific stream, fallback to format duration
+                    raw_dur = source_stream_tags.get("DURATION", 
+                                source_stream_tags.get("duration", 
+                                stream.get("duration", 
+                                    media_info.get("format", {}).get("duration", "0"))))
+
                     # Pass this to the row (assuming SourceStreamRow is updated to handle/display it)
                     row = SourceStreamRow(
                         desc, 
@@ -526,7 +531,8 @@ class JobSetupWindow(Gtk.ApplicationWindow):
                         stm_idx, 
                         self, 
                         initial_metadata=initial_meta,
-                        initial_disposition=file_active_flags
+                        initial_disposition=file_active_flags,
+                        raw_duration=raw_dur
                     )
 
                     row.original_disposition = file_active_flags
@@ -537,6 +543,10 @@ class JobSetupWindow(Gtk.ApplicationWindow):
                         disp = cached_data.get("disposition", "")
                         row.apply_disposition(disp)
                         row.ent_lng.set_text(cached_data['language'])
+                        row.ent_tstart.set_text(cached_data.get("trim_start", ""))
+                        row.ent_tlen.set_text(cached_data.get("trim_length", ""))
+                        row.ent_tend.set_text(cached_data.get("trim_end", ""))
+                        row.ent_sdly.set_text(str(cached_data.get("stream_delay", "0")))
                     else:
                         # New stream default: active if V or A
                         if stype in ['video', 'audio']:
