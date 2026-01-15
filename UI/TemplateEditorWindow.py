@@ -141,11 +141,27 @@ class TemplateEditorWindow(Gtk.ApplicationWindow):
             header.append(self.btn_add_filter)
             box.append(header)
 
+            # Mode selection and Reorder buttons
             mode_hbox = Gtk.Box(spacing=6)
             mode_hbox.append(Gtk.Label(label="Mode:"))
+            
             self.combo_filter_mode = Gtk.DropDown.new_from_strings(["Simple", "Complex"])
+            self.combo_filter_mode.set_hexpand(True) # Push reorder buttons to the right
             self.combo_filter_mode.connect("notify::selected", self.on_filter_mode_changed)
             mode_hbox.append(self.combo_filter_mode)
+
+            # Reorder Buttons
+            self.btn_filter_up = Gtk.Button(icon_name="go-up-symbolic", tooltip_text="Move filter up")
+            self.btn_filter_down = Gtk.Button(icon_name="go-down-symbolic", tooltip_text="Move filter down")
+            self.btn_filter_up.add_css_class("flat")
+            self.btn_filter_down.add_css_class("flat")
+            
+            self.btn_filter_up.connect("clicked", self.move_selected_filter, -1)
+            self.btn_filter_down.connect("clicked", self.move_selected_filter, 1)
+            
+            mode_hbox.append(self.btn_filter_up)
+            mode_hbox.append(self.btn_filter_down)
+            
             box.append(mode_hbox)
 
             # The Stack allows us to swap the UI content
@@ -177,13 +193,13 @@ class TemplateEditorWindow(Gtk.ApplicationWindow):
             container.append(box)
             return self.lst_filters
         else:
+            # ... (Standard non-filter column logic remains same)
             self.btn_add_eo = Gtk.Button(icon_name="list-add-symbolic")
             self.btn_add_eo.add_css_class("flat")
             self.btn_add_eo.connect("clicked", add_callback)
             header.append(self.btn_add_eo)
             box.append(header)
 
-        # Standard non-filter column logic
         scroll = Gtk.ScrolledWindow(vexpand=True)
         lst = Gtk.ListBox()
         lst.add_css_class("boxed-list")
@@ -191,6 +207,44 @@ class TemplateEditorWindow(Gtk.ApplicationWindow):
         box.append(scroll)
         container.append(box)
         return lst
+
+    def move_selected_filter(self, button, direction):
+        """Moves the selected filter row and forces GTK to refresh the selection state."""
+        selected_row = self.lst_filters.get_selected_row()
+        if not selected_row:
+            return
+
+        index = selected_row.get_index()
+        target_index = index + direction
+
+        # 1. Get total count for bounds checking
+        count = 0
+        child = self.lst_filters.get_first_child()
+        while child:
+            count += 1
+            child = child.get_next_sibling()
+
+        # 2. Bounds check: If we hit a wall, just re-assert focus so we don't 'lose' the row
+        if target_index < 0 or target_index >= count:
+            selected_row.grab_focus()
+            self.lst_filters.select_row(selected_row)
+            return
+
+        # 3. Perform the move
+        # We unselect first to clear the internal GtkListBox state
+        self.lst_filters.unselect_all()
+        
+        self.lst_filters.remove(selected_row)
+        self.lst_filters.insert(selected_row, target_index)
+        
+        # 4. Force RE-SELECTION and FOCUS
+        # This is the "Nuclear" option for selection persistence
+        selected_row.set_selectable(True)
+        selected_row.grab_focus()
+        self.lst_filters.select_row(selected_row)
+        
+        # This ensures the ListBox scrolls to keep the moved row visible
+        selected_row.activate()
 
     # --- ROW MANAGEMENT ---
 
