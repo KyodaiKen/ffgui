@@ -113,47 +113,6 @@ class FFmpegBaseParser(ABC):
         return items
 
     def _clean_descr(self, raw_descr):
-        min_match = re.search(r"from (.*?) to", raw_descr)
-        max_match = re.search(r"to (.*?)\)", raw_descr)
-        def_match = re.search(r"default (.*?)\)", raw_descr)
-        min_v = self._to_num(min_match.group(1)) if min_match else None
-        max_v = self._to_num(max_match.group(1)) if max_match else None
-        def_v = self._to_num(def_match.group(1)) if def_match else None
-
-        clean = re.sub(r"\(from.*?default.*?\)", "", raw_descr).strip()
-        clean = re.sub(r"^[A-Z]\.\s+", "", clean)
-        clean = re.sub(r"^[EDVASFTR\.]{2,}\s*", "", clean)
-        return {"clean_descr": clean.strip(), "min": min_v, "max": max_v, "default": def_v}
-
-    def _map_flags(self, flag_str):
-        if not flag_str or len(flag_str) < 5: return {}
-        return {
-            "encoding": 'E' in flag_str[0:2],
-            "decoding": 'D' in flag_str[0:2],
-            "filtering": 'F' in flag_str[2] if len(flag_str) > 2 else False,
-            "video": 'V' in flag_str[3] if len(flag_str) > 3 else False,
-            "audio": 'A' in flag_str[4] if len(flag_str) > 4 else False,
-            "timeline": 'T' in flag_str,
-            "runtime": 'R' in flag_str
-        }
-
-    def _create_param_dict(self, name, p_type, flags, parsed, section):
-        f_map = self._map_flags(flags)
-        clean_type = p_type.replace('<', '').replace('>', '')
-        return {
-            "name": name,
-            "section": section,
-            "type": clean_type,
-            "is_flags": clean_type == "flags",
-            "descr": parsed["clean_descr"],
-            "context": f_map,
-            "min": parsed["min"],
-            "max": parsed["max"],
-            "default": parsed["default"],
-            "options": []
-        }
-
-    def _clean_descr(self, raw_descr):
         # 1. Extract metadata strings
         min_match = re.search(r"from (.*?) to", raw_descr)
         max_match = re.search(r"to (.*?)\)", raw_descr)
@@ -377,6 +336,17 @@ class FFmpegFilterParser(FFmpegBaseParser):
         base["context"]["is_complex"] = io_info["is_complex"]
         
         return base
+    
+    def _create_param_dict(self, name, p_type, flags, parsed, section):
+        base = super()._create_param_dict(name, p_type, flags, parsed, section)
+        for key in ["for_muxer", "for_demuxer", "for_encoder", "for_decoder"]:
+            base.pop(key, None)
+
+        io_info = self._filter_io_map.get(self._current_filter_name, {"inputs": [], "outputs": [], "is_complex": False})
+        base["context"]["inputs"] = io_info["inputs"]
+        base["context"]["outputs"] = io_info["outputs"]
+        base["context"]["is_complex"] = io_info["is_complex"]
+        return base
 
     def parse_list(self):
         output = self._run_cmd(["-filters"])
@@ -425,6 +395,20 @@ class FFmpegFilterParser(FFmpegBaseParser):
         output = self._run_cmd(["-h", f"filter={item_name}"])
         header_match = re.search(r"Filter\s+([\w_-]+)", output)
         data = self._parse_av_options(output)
+
+        # --- Special Exception for 'scale' filter flags ---
+        if item_name == "scale":
+            main_flags_param = next((p for p in data["parameters"] if p["name"] == "flags"), None)
+            sws_flags_param = next((p for p in data["parameters"] if p["name"] == "sws_flags"), None)
+            
+            if main_flags_param and sws_flags_param:
+                # Move the choices from sws_flags to the main flags parameter
+                main_flags_param["options"] = sws_flags_param["options"]
+                main_flags_param["is_flags"] = True
+                main_flags_param["type"] = "flags"
+                # Optionally remove the now-redundant sws_flags from the list
+                data["parameters"] = [p for p in data["parameters"] if p["name"] != "sws_flags"]
+
         data["name"] = header_match.group(1) if header_match else item_name
         return data
 
