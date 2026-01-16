@@ -14,23 +14,22 @@ ucrt_share = to_win('/ucrt64/share')
 
 all_datas = [
     ('gtk-icons', 'gtk-icons'),
-    ('UI', 'UI'),
-    ('Core', 'Core'),
     ('templates', 'templates'), # PyInstaller will put these in _internal initially
     ('codecs', 'codecs'),
+    ('theme', 'theme'),
     ('LICENSE', '.'),
     (os.path.join(ucrt_lib, 'girepository-1.0'), 'lib/girepository-1.0'),
     (os.path.join(ucrt_lib, 'gdk-pixbuf-2.0'), 'lib/gdk-pixbuf-2.0'),
     (os.path.join(ucrt_share, 'glib-2.0/schemas'), 'share/glib-2.0/schemas'),
 ]
 
-optional_paths = [
-    (os.path.join(ucrt_share, 'icons/Adwaita'), 'share/icons/Adwaita'),
-]
-
-for src, dst in optional_paths:
-    if os.path.exists(src):
-        all_datas.append((src, dst))
+# optional_paths = [
+#     (os.path.join(ucrt_share, 'icons/Adwaita'), 'share/icons/Adwaita'),
+# ]
+#
+# for src, dst in optional_paths:
+#     if os.path.exists(src):
+#         all_datas.append((src, dst))
 
 a = Analysis(
     ['ffgui.py'],
@@ -41,7 +40,6 @@ a = Analysis(
     hookspath=[],
     hooksconfig={},
     runtime_hooks=[],
-    excludes=[],
     win_no_prefer_redirects=False,
     win_private_assemblies=False,
     cipher=None,
@@ -84,24 +82,42 @@ coll = COLLECT(
     name='ffgui',
 )
 
-# --- THE FIX: POST-BUILD MANIPULATION ---
-DIST_PATH = os.path.join('dist', 'ffgui')
+
+DIST_PATH = os.path.abspath(os.path.join('dist', 'ffgui'))
 INTERNAL_PATH = os.path.join(DIST_PATH, '_internal')
 
+print("--- Step 2: Relocating assets and cleaning bloat ---")
+
+# 1. Move folders that PyInstaller put in _internal to the root
 to_move = ['templates', 'codecs', 'LICENSE']
 
-print("--- Moving files to root directory ---")
 for item in to_move:
     src = os.path.join(INTERNAL_PATH, item)
     dst = os.path.join(DIST_PATH, item)
     if os.path.exists(src):
-        # If it's a folder, remove destination if it exists and move
-        if os.path.isdir(src):
-            if os.path.exists(dst):
-                shutil.rmtree(dst)
-            shutil.move(src, dst)
-            print(f"Moved directory: {item}")
-        else:
-            # If it's a file
-            shutil.move(src, dst)
-            print(f"Moved file: {item}")
+        if os.path.exists(dst):
+            shutil.rmtree(dst) if os.path.isdir(dst) else os.remove(dst)
+        shutil.move(src, dst)
+        print(f"Moved {item} to root.")
+
+# 2. CLEAN UP THE DUPLICATE DLLS
+# PyInstaller likely took your codecs and put them in _internal as loose files.
+# We look for any 'av*.dll' in _internal and delete them because they are
+# already safely inside ffgui/codecs/ffmpeg/ (thanks to 'all_datas')
+print("--- Removing duplicate FFmpeg DLLs from _internal ---")
+if os.path.exists(INTERNAL_PATH):
+    for file in os.listdir(INTERNAL_PATH):
+        # Only delete if it starts with 'av' and is a DLL
+        # This targets ffmpeg specifically without touching GTK/System libs
+        if file.startswith(('avfilter', 'avdevice', 'avcodec', 'avformat', 'avutil', 'swresample', 'swscale', 'postproc')) and file.endswith(".dll"):
+            target = os.path.join(INTERNAL_PATH, file)
+            os.remove(target)
+            print(f"Deleted duplicate: {file}")
+
+# 3. DELETE SOURCE CODE COPIES (Core and UI)
+# If PyInstaller copied your source code folders into _internal, kill them.
+for folder in ['Core', 'UI']:
+    src_folder = os.path.join(INTERNAL_PATH, folder)
+    if os.path.exists(src_folder):
+        shutil.rmtree(src_folder)
+        print(f"Removed source code duplicate: {folder}")

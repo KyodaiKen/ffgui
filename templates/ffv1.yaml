@@ -1,0 +1,7 @@
+type: video
+codec: ffv1
+parameters:
+    options: {}
+filters:
+    mode: simple
+    entries: []

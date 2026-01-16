@@ -59,47 +59,64 @@ class FFGuiApp(Gtk.Application):
             "media": FFmpegMediaInfoParser(self.ffprobe_full_exec_path)
         }
 
-    _ICONS_SETUP_DONE = False
-
-    def _setup_windows_icons(self):
+    def _setup_gtk_theme(self):
         if os.name != 'nt':
             return
             
         display = Gdk.Display.get_default()
-        if display:
-            theme = Gtk.IconTheme.get_for_display(display)
-            
-            # Point directly to the folder where the .svg files are located
-            # Based on your structure, this is the 'actions' folder
-            icon_dir = os.path.join(base_path_app, "gtk-icons", "hicolor", "scalable", "actions")
-            
-            if os.path.exists(icon_dir):
-                # We add the direct folder to the search path
-                theme.add_search_path(icon_dir)
-                
-                # Since there is no index.theme, GTK doesn't know 
-                # to look for 'icon-name-symbolic.svg'. 
-                # It only looks for 'icon-name.svg'.
+        if not display:
+            return
 
+        # 1. Detect Windows Theme (Registry check)
+        is_dark = False
+        try:
             import winreg
-            # Path to the Windows "Personalize" registry key
-            try:
-                # Access the Windows Registry key for 'Personalize'
-                registry_path = r"Software\Microsoft\Windows\CurrentVersion\Themes\Personalize"
-                with winreg.OpenKey(winreg.HKEY_CURRENT_USER, registry_path) as key:
-                    # AppsUseLightTheme: 0 = Dark Mode, 1 = Light Mode
-                    value, _ = winreg.QueryValueEx(key, "AppsUseLightTheme")
-                    
-                    style_manager = Adw.StyleManager.get_default()
-                    if value == 0:
-                        style_manager.set_color_scheme(Adw.ColorScheme.PREFER_DARK)
-                    else:
-                        style_manager.set_color_scheme(Adw.ColorScheme.PREFER_LIGHT)
-            except Exception as e:
-                print(f"Theme detection failed: {e}")
-                # Default to system standard if registry check fails
-                Adw.StyleManager.get_default().set_color_scheme(Adw.ColorScheme.PREFER_LIGHT)
+            with winreg.OpenKey(winreg.HKEY_CURRENT_USER, r"Software\Microsoft\Windows\CurrentVersion\Themes\Personalize") as key:
+                is_dark = (winreg.QueryValueEx(key, "AppsUseLightTheme")[0] == 0)
+        except Exception as e:
+            print(f"Registry check failed: {e}")
 
+        # 2. Setup Icons (Fixed: Use icon_theme variable)
+        icon_theme = Gtk.IconTheme.get_for_display(display)
+        
+        icon_dir = os.path.join(base_path_app, "gtk-icons", "hicolor", "scalable", "actions")
+        if os.path.exists(icon_dir):
+            icon_theme.add_search_path(icon_dir)
+
+        # Add the Breeze assets folder so CSS url() calls can find checkboxes/radios
+        subfolder = "dark" if is_dark else "light"
+        asset_dir = os.path.join(base_path_app, "theme", subfolder, "assets")
+        if os.path.exists(asset_dir):
+            icon_theme.add_search_path(asset_dir)
+
+        # 3. Determine path and Load CSS
+        theme_path = os.path.join(base_path_app, "theme", subfolder, "gtk.css")
+
+        if os.path.exists(theme_path):
+            provider = Gtk.CssProvider()
+            provider.load_from_path(theme_path)
+            
+            # Use PRIORITY_USER (the highest) to beat Libadwaita's internal styles
+            Gtk.StyleContext.add_provider_for_display(
+                display, 
+                provider, 
+                Gtk.STYLE_PROVIDER_PRIORITY_USER
+            )
+            print(f"Successfully loaded {subfolder} theme from: {theme_path}")
+        else:
+            print(f"CRITICAL: Theme not found at {theme_path}")
+
+        # 4. Lock Adwaita StyleManager
+        # Using FORCE instead of PREFER is key to stopping the Adwaita-blue takeover
+        style_manager = Adw.StyleManager.get_default()
+        if is_dark:
+            style_manager.set_color_scheme(Adw.ColorScheme.FORCE_DARK)
+        else:
+            style_manager.set_color_scheme(Adw.ColorScheme.FORCE_LIGHT)
+
+        # 5. Force Font Settings
+        settings = Gtk.Settings.get_for_display(display)
+        settings.set_property("gtk-font-name", "Segoe UI 10")
 
     def _load_global_css(self):
         css_provider = Gtk.CssProvider()
@@ -182,7 +199,7 @@ class FFGuiApp(Gtk.Application):
         Gtk.StyleContext.add_provider_for_display(
             Gdk.Display.get_default(), 
             css_provider, 
-            Gtk.STYLE_PROVIDER_PRIORITY_APPLICATION
+            Gtk.STYLE_PROVIDER_PRIORITY_USER
         )
 
     def resolve_paths(self):
@@ -237,7 +254,7 @@ class FFGuiApp(Gtk.Application):
 
     def do_startup(self):
         Gtk.Application.do_startup(self)
-        self._setup_windows_icons()
+        self._setup_gtk_theme()
         self._load_global_css()
         self.show_init_progress()
 
