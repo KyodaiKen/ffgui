@@ -13,6 +13,7 @@ class SourceStreamRow(Gtk.ListBoxRow):
     def __init__(self, parent_window, stream_settings=None):
         super().__init__()
         self.parent_window = parent_window
+        self.stream_bundle = stream_settings or {}
         data = stream_settings or {}
         self.current_template = data.get("template", "")
 

@@ -462,7 +462,10 @@ class JobSetupWindow(Gtk.ApplicationWindow):
                 if "error" in media_info: raise Exception(media_info["error"])
 
                 fmt = media_info.get('format', {})
-                duration_str = seconds_to_time(float(fmt.get('duration', 0)))
+
+                # Capture the global file duration as a fallback
+                file_duration = float(fmt.get('duration', 0))
+                duration_str = seconds_to_time(file_duration)
 
                 # File Header
                 header_row = self._create_file_header(file_title, duration_str)
@@ -480,7 +483,7 @@ class JobSetupWindow(Gtk.ApplicationWindow):
                         "index": stm_idx,
                         "type": stype,
                         "description": self.get_stream_description(stream),
-                        "duration": stream.get("duration", "0"),
+                        "duration": stream.get("duration") or file_duration or "0",
                         "active": cached.get("active", stype in ['video', 'audio']),
                         "template": cached.get("template", ""),
                         "transcoding_settings": cached.get("transcoding_settings", {}),
@@ -717,7 +720,7 @@ class JobSetupWindow(Gtk.ApplicationWindow):
                     # --- DURATION CALCULATION START ---
                     if stream_cfg.get("active"):
                         # Get original stream duration (from the row's internal data)
-                        orig_duration = float(stream_cfg.get("duration") or 0)
+                        orig_duration = float(curr.stream_bundle.get("duration") or 0)
                         
                         # Get trim values (assuming they are stored as time strings or seconds)
                         # We use Core.Utils.time_to_seconds if they are strings
@@ -743,8 +746,12 @@ class JobSetupWindow(Gtk.ApplicationWindow):
             curr = curr.get_next_sibling()
 
         final_data["sources"]["streams"] = final_streams
-        # Save the calculated max duration for the JobRunner/UI
-        final_data["total_duration"] = max_job_duration
+
+        if max_job_duration == 0 and self.job_data.get("total_duration"):
+            final_data["total_duration"] = self.job_data["total_duration"]
+            print("Note: UI calculated 0 duration, preserving existing job duration.")
+        else:
+            final_data["total_duration"] = max_job_duration
 
         # 4. Final Validation & Save
         valid, errs = JobsDataModel.validate_job_data(self.app, final_data)
