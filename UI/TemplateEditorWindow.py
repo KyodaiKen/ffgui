@@ -11,77 +11,91 @@ from UI.Icons import Icons
 import copy
 
 class TemplateEditorWindow(Gtk.ApplicationWindow):
-    def __init__(self, parent_window, template, on_save_callback=None, locked_type=None, clone_mode=False, **kwargs):
+    def __init__(self, parent_window, template, on_save_callback=None, 
+                 locked_type=None, clone_mode=False, is_ephemeral=False, **kwargs):
         super().__init__(**kwargs, title="Template Editor")
 
-        # State Initialization
+        # 1. Initialize State FIRST (Fixes the AttributeError)
         self.app = Gtk.Application.get_default()
         self.on_save_callback = on_save_callback
+        self.is_ephemeral = is_ephemeral
         self.locked_type = locked_type
-        self.all_types = Icons.get_all_types()
         self.clone_mode = clone_mode
-
-        # Template Setup
+        self.all_types = Icons.get_all_types() 
+        
+        # 2. Prepare Data
         self.template = self._prepare_template_data(template)
         self.selected_codec = self.template.get('codec', 'libx264')
 
-        # Window Configuration
+        # 3. Window Config
         self.set_default_size(1024, 700)
         self.set_transient_for(parent_window)
         self.set_modal(True)
 
-        # Build UI
+        # 4. Build UI
         self._build_ui()
 
-        # Handle clone mode
-        if self.clone_mode:
+        # 5. Apply special modes & Load Data
+        if self.is_ephemeral:
+            self._apply_ephemeral_setup()
+        elif self.clone_mode:
             self._apply_clone_mode_setup()
 
-        # Fill Data
         self.load_structured_template(self.template)
         self.update_codec_ui()
 
     def _prepare_template_data(self, template):
-        """Ensures the template is a flat dict for the editor, regardless of origin."""
-        if template:
-            # Create a copy so we don't mutate the original list object
-            working_copy = copy.deepcopy(template)            
-            return working_copy
+        """Standardizes input whether it's a persistent template or live stream data."""
+        if not template: 
+            return {"name": "New Template", "parameters": {"options": {}}}
             
-        # Default flat structure for a brand new template
-        return {
-            "name": "", 
-            "type": "video", 
-            "codec": "libx264",
-            "parameters": {"options": {}},
-            "filters": {"mode": "simple", "entries": []}
-        }
+        # FIXED: Robust detection of the live stream bundle
+        # Check if transcoding_settings is present (Job/Stream mode)
+        if "transcoding_settings" in template:
+            trans = template["transcoding_settings"]
+            # Important: Get codec and parameters from inside trans
+            prepared = {
+                "name": template.get("name", "Manual / Custom Settings"),
+                "type": template.get("type", "video"),
+                "codec": trans.get("codec") or "copy", # Fallback to copy if None
+                "parameters": {"options": trans.get("parameters", {})},
+                "filters": trans.get("filters", {"mode": "simple", "entries": []})
+            }
+            return prepared
+            
+        # CASE B: Persistent Template (from YAML)
+        # Ensure parameters always has the 'options' wrapper internally
+        if "parameters" in template:
+            if "options" not in template["parameters"]:
+                template["parameters"] = {"options": template["parameters"]}
+        else:
+            template["parameters"] = {"options": {}}
+            
+        return template
 
     def _build_ui(self):
         main_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=10)
-        # Using discrete margins
         main_box.set_margin_start(12)
         main_box.set_margin_end(12)
         main_box.set_margin_top(12)
         main_box.set_margin_bottom(12)
         self.set_child(main_box)
 
-        # Header Grid (Name, Type, Codec)
         grid = Gtk.Grid(row_spacing=10, column_spacing=10)
         main_box.append(grid)
 
+        # Name field elements
+        self.name_label = Gtk.Label(label="Name:", halign=Gtk.Align.END)
         self.entry_name = Gtk.Entry(hexpand=True, placeholder_text="Template Name...")
         
-        # Container for Name + Badge
-        name_vbox = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=4)
-        name_vbox.append(self.entry_name)
+        self.name_container = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=4)
+        self.name_container.append(self.entry_name)
         
-        # Placeholder for badge
         self.badge_container = Gtk.Box()
-        name_vbox.append(self.badge_container)
+        self.name_container.append(self.badge_container)
 
-        grid.attach(Gtk.Label(label="Name:", halign=Gtk.Align.END), 0, 0, 1, 1)
-        grid.attach(name_vbox, 1, 0, 1, 1)
+        grid.attach(self.name_label, 0, 0, 1, 1)
+        grid.attach(self.name_container, 1, 0, 1, 1)
 
         self.combo_type = Gtk.DropDown.new_from_strings([t.capitalize() for t in self.all_types])
         self.combo_type.props.halign = Gtk.Align.START
@@ -100,17 +114,29 @@ class TemplateEditorWindow(Gtk.ApplicationWindow):
         list_container.set_homogeneous(True)
         main_box.append(list_container)
 
+        # The listbox for parameters is called lst_encoder
         self.lst_encoder = self._create_column(list_container, "Encoder Options", self.on_add_encoder_param)
         self.lst_filters = self._create_column(list_container, "Filters", self.on_add_filter, is_filter=True)
 
         self.param_name_group = Gtk.SizeGroup(mode=Gtk.SizeGroupMode.HORIZONTAL)
 
         # Footer Actions
-        btn_save = Gtk.Button(label="Save Template")
-        btn_save.add_css_class("suggested-action")
-        btn_save.set_halign(Gtk.Align.END)
-        btn_save.connect("clicked", self.on_save_clicked)
-        main_box.append(btn_save)
+        self.btn_save = Gtk.Button(label="Save Template")
+        self.btn_save.add_css_class("suggested-action")
+        self.btn_save.set_halign(Gtk.Align.END)
+        self.btn_save.connect("clicked", self.on_save_clicked)
+        main_box.append(self.btn_save)
+
+    def _apply_ephemeral_setup(self):
+        """Hides file-specific UI elements when editing job-level settings."""
+        # 1. Hide the name entry box and its label
+        # (Assuming name_vbox is the container from _build_ui)
+        self.name_label.set_visible(False) # You'll need to store the 'Name:' label in self
+        self.name_container.set_visible(False) # Container for entry + badge
+        
+        # 2. Change the save button text
+        self.btn_save.set_label("Apply to Job")
+        self.btn_save.set_tooltip_text("Apply these settings to the current stream only")
 
     def _apply_clone_mode_setup(self):
             """Logic specific to cloning a template."""
@@ -431,94 +457,89 @@ class TemplateEditorWindow(Gtk.ApplicationWindow):
     def get_selected_type(self):
         return self.all_types[self.combo_type.get_selected()]
 
+    def _get_full_parameter_map(self):
+        """Helper to get rich metadata for all valid parameters."""
+        param_map = {}
+        ffmpeg_data = getattr(self.app, 'ffmpeg_data', {})
+        for group in ffmpeg_data.get('globals', []):
+            for p in group.get("parameters", []):
+                p_entry = p.copy()
+                p_entry['is_global'] = True
+                param_map[p['name']] = p_entry
+        codecs = ffmpeg_data.get('codecs', [])
+        current_codec_data = next((c for c in codecs if c['name'] == self.selected_codec), {})
+        for p in current_codec_data.get('parameters', []):
+            p_entry = p.copy()
+            p_entry['is_global'] = False
+            param_map[p['name']] = p_entry
+        return param_map
+
     def load_structured_template(self, template):
-        # 1. Handle Name
+        """
+        Populates the UI from the template data. 
+        Assumes _prepare_template_data has already normalized the input.
+        """
+        # 1. Handle Name and Editability
         name = template.get('name', '')
         self.entry_name.set_text(name)
 
-        if name != "New Template" and not self.clone_mode:
-            self.entry_name.set_editable(False)
-            self.entry_name.set_can_focus(False)
-        else:
-            # Ensure it is explicitly enabled for new/cloned templates
-            self.entry_name.set_editable(True)
-            self.entry_name.set_can_focus(True)
+        is_new_or_clone = (name == "New Template" or self.clone_mode or self.is_ephemeral)
+        self.entry_name.set_editable(is_new_or_clone)
+        self.entry_name.set_can_focus(is_new_or_clone)
 
-        # 2. Data is now guaranteed to be flat thanks to _prepare_template_data
+        # 2. Update Codec and Type UI
         self.selected_codec = template.get('codec', 'libx264')
+        self.update_codec_ui()
 
-        # 3. Update Type Dropdown
         target_type = self.locked_type or template.get('type', 'video')
         try:
-            idx = [t.lower() for t in self.all_types].index(target_type.lower())
+            type_names = [t.lower() for t in self.all_types]
+            idx = type_names.index(target_type.lower())
             self.combo_type.set_selected(idx)
         except (ValueError, AttributeError):
             pass
 
-        # 4. Filter Mode
-        if hasattr(self, 'combo_filter_mode'):
-            f_data = template.get('filters', {})
-            f_mode = f_data.get('mode', 'simple').lower()
-            # Match "simple" or "complex" to the dropdown index
-            self.combo_filter_mode.set_selected(1 if f_mode == "complex" else 0)
-
-        # 5. Clear and Add Encoder rows
-        self.lst_encoder.remove_all() # GTK4 convenience method
-
-        def get_full_parameter_map():
-            """Returns a dict of {name: param_object} prioritized by Codec > Global."""
-            param_map = {}
-            ffmpeg_data = getattr(self.app, 'ffmpeg_data', {})
-            
-            # 1. Globals (Lower Priority)
-            for group in ffmpeg_data.get('globals', []):
-                group_name = group.get("name", "").lower()
-                for p in group.get("parameters", []):
-                    p_entry = p.copy()
-                    p_entry['is_global'] = True
-                    p_entry['group_name'] = group_name
-                    param_map[p['name']] = p_entry
-
-            # 2. Codec-Specific (Higher Priority)
-            codecs = ffmpeg_data.get('codecs', [])
-            current_codec_data = next((c for c in codecs if c['name'] == self.selected_codec), {})
-            for p in current_codec_data.get('parameters', []):
-                p_entry = p.copy()
-                p_entry['is_global'] = False
-                param_map[p['name']] = p_entry
-            
-            return param_map
-            
-        full_map = get_full_parameter_map()
-
-        params = template.get('parameters', {}).get('options', {})
-        for k, v in params.items():
-            # Find the rich parameter object from FFmpeg data
-            if k in full_map:
-                param_obj = full_map[k]
-            else:
-                # Fallback if the parameter name isn't recognized by current FFmpeg
-                param_obj = {
-                    'name': k, 
-                    'descr': "Unknown parameter (not found in current FFmpeg data)",
-                    'is_global': False 
-                }
-            
-            # Pass the rich object (param_obj) instead of just the string (k)
+        # 3. Load Encoder Parameters
+        self.lst_encoder.remove_all()
+        
+        # Use the existing class method to get the FFmpeg metadata map
+        full_map = self._get_full_parameter_map()
+        
+        # Because of _prepare_template_data, parameters are guaranteed 
+        # to be nested under 'options'
+        params_dict = template.get('parameters', {}).get('options', {})
+        
+        for k, v in params_dict.items():
+            param_obj = full_map.get(k, {
+                'name': k, 
+                'descr': "Unknown parameter (not in current FFmpeg data)", 
+                'is_global': False
+            })
             self.add_row_to_list(self.lst_encoder, param_obj, value=v)
 
-        # 6. Load Filter rows
+        # 4. Filter Mode and Loading
+        f_data = template.get('filters', {})
+        f_mode = f_data.get('mode', 'simple').lower()
+        
+        if hasattr(self, 'combo_filter_mode'):
+            self.combo_filter_mode.set_selected(1 if f_mode == "complex" else 0)
+            self.filter_stack.set_visible_child_name(f_mode)
+
         self.lst_filters.remove_all()
-        f_entries = template.get('filters', {}).get('entries', [])
+        f_entries = f_data.get('entries', [])
         all_ffmpeg_filters = getattr(self.app, 'ffmpeg_data', {}).get('filters', [])
         
         for entry in f_entries:
-            name = entry.get('name')
-            params = entry.get('params', {})
-            # Find the full filter schema from ffmpeg_data
-            f_obj = next((f for f in all_ffmpeg_filters if f['name'] == name), None)
+            f_name = entry.get('name')
+            f_params = entry.get('params', {})
+            # Match against FFmpeg schema to get rich UI controls
+            f_obj = next((f for f in all_ffmpeg_filters if f['name'] == f_name), None)
+            
             if f_obj:
-                self.add_filter_row(f_obj, params)
+                self.add_filter_row(f_obj, f_params)
+            else:
+                # Fallback for unknown filters
+                self.add_filter_row({'name': f_name, 'parameters': []}, f_params)
 
     def show_error_dialog(self, message):
         """Standard GTK4 Message Dialog helper."""
@@ -535,46 +556,6 @@ class TemplateEditorWindow(Gtk.ApplicationWindow):
                 options[row._key] = self.extract_widget_value(row._val_widget)
             row = row.get_next_sibling()
         return options
-
-    def on_save_clicked(self, _):
-        filename = self.entry_name.get_text().strip()
-        if not filename:
-            self.show_error_dialog("Template name cannot be empty.")
-            return
-
-        options = self._get_options_from_rows()
-
-        # Gather filters
-        filter_entries = []
-        f_row = self.lst_filters.get_first_child()
-        while f_row:
-            if hasattr(f_row, "_filter_obj"):
-                filter_entries.append({
-                    "name": f_row._filter_obj['name'],
-                    "params": f_row._filter_params
-                })
-            f_row = f_row.get_next_sibling()
-        
-        # Construct technical data
-        yaml_data = {
-            "type": self.get_selected_type(),
-            "codec": self.selected_codec,
-            "parameters": {"options": options},
-            "filters": {
-                "mode": self.combo_filter_mode.get_selected_item().get_string().lower() if hasattr(self, 'combo_filter_mode') else "simple",
-                "entries": filter_entries
-            }
-        }
-
-        try:
-            # Use the directory provided by the main application object
-            TemplateDataModel.save_template(self.app.templates_dir, filename, yaml_data)
-            
-            if self.on_save_callback:
-                self.on_save_callback(filename)
-            self.destroy()
-        except Exception as e:
-            self.show_error_dialog(f"Save failed: {str(e)}")
 
     def extract_widget_value(self, w):
         """Helper to get the technical value from various widget types."""
@@ -696,3 +677,54 @@ class TemplateEditorWindow(Gtk.ApplicationWindow):
         """Creates a string like 'w=1280:h=720' for the UI summary."""
         summary = ":".join([f"{k}={v}" for k, v in row._filter_params.items()])
         row._summary_lbl.set_text(summary or "(no parameters)")
+
+    def get_current_parameters(self):
+        """Scrapes the UI for codec parameters using the correct ListBox."""
+        return self._get_options_from_rows()
+
+    def get_current_filters(self):
+        """Scrapes the UI for active filters and respects the mode dropdown."""
+        filter_list = []
+        mode = "complex" if self.combo_filter_mode.get_selected() == 1 else "simple"
+        
+        if hasattr(self, 'lst_filters'):
+            row = self.lst_filters.get_first_child()
+            while row:
+                if hasattr(row, '_filter_obj'):
+                    filter_list.append({
+                        "name": row._filter_obj['name'],
+                        "params": getattr(row, '_filter_params', {})
+                    })
+                row = row.get_next_sibling()
+        return {"mode": mode, "entries": filter_list}
+
+    def on_save_clicked(self, _):
+        """Gathers UI data and returns it via callback."""
+        # 1. Gather the live data from UI widgets
+        current_options = self.get_current_parameters()
+        current_filters = self.get_current_filters()
+        
+        if self.is_ephemeral:
+            # Return ONLY the raw values for SourceStreamRow to digest
+            # SourceStreamRow will then bundle these into transcoding_settings
+            data = {
+                "codec": self.selected_codec,
+                "parameters": current_options,
+                "filters": current_filters
+            }
+        else:
+            # Persistent template mode: save the name and type as well
+            data = copy.deepcopy(self.template)
+            data.update({
+                "name": self.entry_name.get_text(),
+                "type": self.get_selected_type(),
+                "codec": self.selected_codec,
+                # Store with 'options' wrapper for file-based consistency
+                "parameters": {"options": current_options},
+                "filters": current_filters
+            })
+
+        if self.on_save_callback:
+            self.on_save_callback(data)
+            
+        self.destroy()

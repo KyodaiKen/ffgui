@@ -31,14 +31,28 @@ class JobSetupWindow(Gtk.ApplicationWindow):
         else:
             self.job_data = JobsDataModel.create_empty_job()
 
-        self.source_paths = []
+        # --- DATA PREPARATION START ---
+        self.source_paths = self.job_data.get("sources", {}).get("files", [])
         self.selected_streams = {}
         self.global_metadata = {}
+
+        # Pre-populate the stream cache from the job data
+        # This is critical so get_sources() knows which templates were saved
+        for s in self.job_data.get("sources", {}).get("streams", []):
+            try:
+                # 'file' is the index in the source_paths list
+                path = self.source_paths[s["file"]]
+                idx = s["index"]
+                self.selected_streams[(path, idx)] = s
+            except (IndexError, KeyError):
+                continue
+        # --- DATA PREPARATION END ---
 
         self.setup_ui()
         
         # 2. Populate UI if we are editing/cloning
         if mode in ["edit", "clone"]:
+            # load_job_into_ui calls get_sources, which now sees your populated selected_streams
             self.load_job_into_ui()
             if mode == "clone":
                 self.show_clone_warning()
@@ -197,19 +211,7 @@ class JobSetupWindow(Gtk.ApplicationWindow):
                     path = self.source_paths[f_idx]
                     # Use the index from YAML, fall back to list order if missing
                     idx = s.get('index', 0) 
-                    
-                    self.selected_streams[(path, idx)] = {
-                        "active": s.get("active", True),
-                        "template": s.get("template", ""),
-                        "original_disposition": s.get("original_disposition", []),
-                        "disposition": s.get("disposition", []),
-                        "language": s.get("language", ""),
-                        "metadata": s.get("metadata", {}),
-                        "trim_start": s.get("trim_start", ""),
-                        "trim_length": s.get("trim_length", ""),
-                        "trim_end": s.get("trim_end", ""),
-                        "stream_delay": s.get("stream_delay", "0")
-                    }
+                    self.selected_streams[(path, idx)] = s.copy()
             except Exception as e:
                 print(f"Error mapping stream: {e}")
 
@@ -232,71 +234,83 @@ class JobSetupWindow(Gtk.ApplicationWindow):
         toast.add_css_class("warning")
         self.grid.attach(toast, 1, 6, 2, 1)
 
-    def on_save_job_clicked(self, _):
-        """Gathers UI data into JobDataModel format and saves"""
-        self.sync_data_model() 
-        self.save_stream_state()
-        
-        final_data = JobsDataModel.create_empty_job()
-        final_data["name"] = self.entry_name.get_text()
-        final_data["output"]["directory"] = self.entry_output_dir.get_text()
-        final_data["output"]["filename"] = self.entry_output_filename.get_text()
-        final_data["output"]["container"] = self.selected_container
-        final_data["output"]["container_parameters"] = self.job_data["output"].get("container_parameters", [])
-        final_data["sources"]["files"] = self.source_paths
+    def get_sources(self):        
+        self.lst_source_streams.remove_all()
+        from Models.TemplateDataModel import TemplateDataModel
 
-        # --- NEW: Calculate Durations for Metadata ---
-        file_durations = {}
-        for path in self.source_paths:
+        for source_path in self.source_paths:
+            file_title = get_file_title(source_path)
             try:
-                # Use the existing parser to find the longest stream
-                info = self.app.parsers['media'].get_info(path)
-                # Filter for streams that have a duration and find the max
-                durations = [float(s.get('duration', 0)) for s in info.get('streams', [])]
-                # Fallback to format duration if stream duration is missing
-                if not durations or max(durations) == 0:
-                    durations = [float(info.get('format', {}).get('duration', 0))]
-                
-                # Convert to microseconds for the Runner
-                file_durations[path] = int(max(durations) * 1000000)
+                media_info = self.app.parsers['media'].get_info(source_path)
+                if "error" in media_info: raise Exception(media_info["error"])
+
+                fmt = media_info.get('format', {})
+                duration_str = seconds_to_time(float(fmt.get('duration', 0)))
+
+                self.lst_source_streams.append(self._create_file_header(file_title, duration_str))
+
+                for stm_idx, stream in enumerate(media_info.get('streams', [])):
+                    stype = stream.get('codec_type', 'unknown')
+                    key = (source_path, stm_idx)
+                    
+                    # IMPORTANT: We must work with a copy or ensure we update the reference
+                    cached = self.selected_streams.get(key, {})
+                    
+                    tpl_name = cached.get("template", "")
+                    # Extract the settings, defaulting to an empty dict if missing
+                    trans_settings = cached.get("transcoding_settings", {})
+
+                    # FIXED: More robust check for null/None/empty codec
+                    # Your YAML has 'codec: null', so trans_settings.get("codec") is None
+                    is_empty = not trans_settings or trans_settings.get("codec") is None
+                    
+                    if tpl_name and (not trans_settings or trans_settings.get("codec") is None):
+                        # PROACTIVE REPAIR: Fetch the actual template data
+                        tpl_obj = TemplateDataModel.get_template_by_name(self.app, tpl_name)
+                        if tpl_obj:
+                            raw_params = tpl_obj.get("parameters", {})
+                            flat_params = raw_params.get("options", raw_params) if isinstance(raw_params, dict) else {}
+                            
+                            trans_settings = {
+                                "codec": tpl_obj.get("codec") or "copy",
+                                "parameters": flat_params,
+                                "filters": tpl_obj.get("filters", {"mode": "simple", "entries": []})
+                            }
+                            # Update the cache so it persists back to the YAML on save
+                            cached["transcoding_settings"] = trans_settings
+
+                    # If NO template is assigned and codec is still null, default to "copy"
+                    if not trans_settings or trans_settings.get("codec") is None:
+                        print(f"WARNING: TEMPLATE {tpl_name} COULD NOT BE LOADED!")
+                        trans_settings = {
+                            "codec": "copy",
+                            "parameters": {},
+                            "filters": {"mode": "simple", "entries": []}
+                        }
+
+                    stream_bundle = {
+                        "path": source_path,
+                        "index": stm_idx,
+                        "type": stype,
+                        "description": self.get_stream_description(stream),
+                        "duration": stream.get("duration", "0"),
+                        "active": cached.get("active", stype in ['video', 'audio']),
+                        "template": tpl_name,
+                        "transcoding_settings": trans_settings, # Now contains the repaired data
+                        "metadata": cached.get("metadata", {}),
+                        "disposition": cached.get("disposition", []),
+                        "language": cached.get("language", stream.get("tags", {}).get("language", "")),
+                        "trim_start": cached.get("trim_start", ""),
+                        "trim_length": cached.get("trim_length", ""),
+                        "trim_end": cached.get("trim_end", ""),
+                        "stream_delay": cached.get("stream_delay", "0")
+                    }
+
+                    row = SourceStreamRow(self, stream_bundle)
+                    self.lst_source_streams.append(row)
+
             except Exception as e:
-                print(f"Error probing duration for {path}: {e}")
-                file_durations[path] = 0
-
-        # Build Stream Data
-        for (path, idx), settings in self.selected_streams.items():
-            try:
-                file_idx = self.source_paths.index(path)
-                
-                # Construct stream entry with duration in import_metadata
-                stream_entry = {
-                    "file": file_idx,
-                    "index": idx,
-                    "active": settings.get("active", False),
-                    "template": settings.get("template", ""),
-                    "disposition": settings.get("disposition", []),
-                    "original_disposition": settings.get("original_disposition", []),
-                    "language": settings.get("language", ""),
-                    "duration": file_durations.get(path, 0),
-                    "trim_start": settings.get("trim_start", ""),
-                    "trim_length": settings.get("trim_length", ""),
-                    "trim_end": settings.get("trim_end", ""),
-                    "stream_delay": settings.get("stream_delay", "0")
-                }
-                final_data["sources"]["streams"].append(stream_entry)
-            except ValueError:
-                continue
-
-        # Validate and return
-        valid, errs = JobsDataModel.validate_job_data(self.app, final_data)
-        if not valid:
-            self.show_error_dialog("\n".join(errs))
-            return
-
-        if self.on_job_setup_finished:
-            self.on_job_setup_finished(final_data)
-
-        self.destroy()
+                self._add_error_row(file_title, e)
 
     def show_error_dialog(self, msg):
         dialog = Gtk.AlertDialog(message="Validation Error", detail=msg)
@@ -426,33 +440,6 @@ class JobSetupWindow(Gtk.ApplicationWindow):
 
         return f"{title_prefix}({codec_type}): {codec_long}{bitrate_str}"
 
-    def save_stream_state(self):
-        """Saves current widget values into the cache using row identity"""
-        row = self.lst_source_streams.get_first_child()
-        # If there are no rows (like during initial load), do nothing!
-        if not row:
-            return
-        
-        row = self.lst_source_streams.get_first_child()
-        while row:
-            if isinstance(row, SourceStreamRow):
-                # Use the path stored directly in the row
-                key = (row.source_path, row.stream_index)
-                
-                self.selected_streams[key] = {
-                    "active": row.chk.get_active(),
-                    "template": row.ent_tpl.get_text(),
-                    "disposition": row.stream_disposition,
-                    "original_disposition": getattr(row, 'original_disposition', []),
-                    "language": row.ent_lng.get_text(),
-                    "metadata": row.stream_metadata,
-                    "trim_start": row.ent_tstart.get_text(),
-                    "trim_length": row.ent_tlen.get_text(),
-                    "trim_end": row.ent_tend.get_text(),
-                    "stream_delay": row.ent_sdly.get_text()
-                }
-            row = row.get_next_sibling()
-
     def get_row_at_index(self, index):
         """Safely retrieves the ListBoxRow at a specific index"""
         count = 0
@@ -465,105 +452,52 @@ class JobSetupWindow(Gtk.ApplicationWindow):
         return None
     
     def get_sources(self):
-        if not (hasattr(self, 'is_loading') and self.is_loading):
-             self.save_stream_state()
 
         self.lst_source_streams.remove_all()
 
         for source_path in self.source_paths:
             file_title = get_file_title(source_path)
-
             try:
                 media_info = self.app.parsers['media'].get_info(source_path)
-                if "error" in media_info:
-                    raise Exception(media_info["error"])
+                if "error" in media_info: raise Exception(media_info["error"])
 
                 fmt = media_info.get('format', {})
-                raw_bitrate = fmt.get('bit_rate')
-                container_br_str = f"{int(raw_bitrate) // 1000} kbps" if raw_bitrate else ""
                 duration_str = seconds_to_time(float(fmt.get('duration', 0)))
 
-                # --- Create Header Row ---
-                header_hbox = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=12)
-                header_hbox.set_margin_top(6)
-                header_hbox.set_margin_end(24)
-                lbl_file = Gtk.Label(label=f"<big><b>{file_title}</b></big>", use_markup=True, xalign=0, hexpand=True)
-                header_hbox.append(lbl_file)
-                if container_br_str:
-                    header_hbox.append(Gtk.Label(label=container_br_str, xalign=1))
-                header_hbox.append(Gtk.Label(label=duration_str, xalign=1))
-                
-                header_row = Gtk.ListBoxRow(selectable=False)
-                header_row.set_child(header_hbox)
+                # File Header
+                header_row = self._create_file_header(file_title, duration_str)
                 self.lst_source_streams.append(header_row)
 
-                GLib.idle_add(self.do_scroll_to_row, header_row)
-
-                # --- Add individual streams ---
                 for stm_idx, stream in enumerate(media_info.get('streams', [])):
-                    desc = self.get_stream_description(stream)
                     stype = stream.get('codec_type', 'unknown')
-                    
-                    # Extract raw stream tags from the file
-                    source_stream_tags = dict(stream.get('tags', {}))
-
-                    disposition_obj = stream.get('disposition', {})
-                    file_active_flags = [k for k, v in disposition_obj.items() if v == 1]
-
-                    # Check cache to see if user has already modified this stream
                     key = (source_path, stm_idx)
-                    cached_data = self.selected_streams.get(key)
                     
-                    # Determine which metadata to use (Cached > Source)
-                    initial_meta = cached_data.get("metadata", source_stream_tags) if cached_data else source_stream_tags
+                    # We only look at cached data for the INITIAL bundle
+                    cached = self.selected_streams.get(key, {})
 
-                    # Get duration for this specific stream, fallback to format duration
-                    raw_dur = source_stream_tags.get("DURATION", 
-                                source_stream_tags.get("duration", 
-                                stream.get("duration", 
-                                    media_info.get("format", {}).get("duration", "0"))))
+                    stream_bundle = {
+                        "path": source_path,
+                        "index": stm_idx,
+                        "type": stype,
+                        "description": self.get_stream_description(stream),
+                        "duration": stream.get("duration", "0"),
+                        "active": cached.get("active", stype in ['video', 'audio']),
+                        "template": cached.get("template", ""),
+                        "transcoding_settings": cached.get("transcoding_settings", {}),
+                        "metadata": cached.get("metadata", {}),
+                        "disposition": cached.get("disposition", []),
+                        "language": cached.get("language", ""),
+                        "trim_start": cached.get("trim_start", ""),
+                        "trim_length": cached.get("trim_length", ""),
+                        "trim_end": cached.get("trim_end", ""),
+                        "stream_delay": cached.get("stream_delay", "0")
+                    }
 
-                    # Pass this to the row (assuming SourceStreamRow is updated to handle/display it)
-                    row = SourceStreamRow(
-                        desc, 
-                        stype, 
-                        source_path, 
-                        stm_idx, 
-                        self, 
-                        initial_metadata=initial_meta,
-                        initial_disposition=file_active_flags,
-                        raw_duration=raw_dur
-                    )
-
-                    row.original_disposition = file_active_flags
-
-                    if cached_data:
-                        row.chk.set_active(cached_data["active"])
-                        row.ent_tpl.set_text(cached_data["template"])
-                        disp = cached_data.get("disposition", "")
-                        row.apply_disposition(disp)
-                        row.ent_lng.set_text(cached_data['language'])
-                        row.ent_tstart.set_text(cached_data.get("trim_start", ""))
-                        row.ent_tlen.set_text(cached_data.get("trim_length", ""))
-                        row.ent_tend.set_text(cached_data.get("trim_end", ""))
-                        row.ent_sdly.set_text(str(cached_data.get("stream_delay", "0")))
-                    else:
-                        # New stream default: active if V or A
-                        if stype in ['video', 'audio']:
-                            row.chk.set_active(True)
-                        
-                        # Set default language from metadata if available
-                        lang = source_stream_tags.get('language') or source_stream_tags.get('LANGUAGE', '')
-                        row.ent_lng.set_text(lang)
-
-                    row.update_meta_button_style()
+                    row = SourceStreamRow(self, stream_bundle)
                     self.lst_source_streams.append(row)
 
             except Exception as e:
-                # (Existing error handling...)
-                error_row = Gtk.ListBoxRow(selectable=False)
-                error_row.set_child(Gtk.Label(label=f"  Error parsing {file_title}: {e}", xalign=0))
-                self.lst_source_streams.append(error_row)
+                self._add_error_row(file_title, e)
 
     def do_scroll_to_row(self, row):
         """Manually scrolls the ScrolledWindow to the position of a specific row"""
@@ -737,3 +671,88 @@ class JobSetupWindow(Gtk.ApplicationWindow):
                 self.entry_output_dir.set_text(folder.get_path())
         except Exception as e:
             print(f"Folder selection cancelled: {e}")
+
+    def _create_file_header(self, title, duration):
+        hbox = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=12)
+        hbox.set_margin_top(6)
+        hbox.set_margin_bottom(2)
+        hbox.set_margin_end(24)
+        lbl = Gtk.Label(label=f"<big><b>{title}</b></big>", use_markup=True, xalign=0, hexpand=True)
+        hbox.append(lbl)
+        hbox.append(Gtk.Label(label=duration, xalign=1))
+        row = Gtk.ListBoxRow(selectable=False)
+        row.set_child(hbox)
+        return row
+
+    def on_save_job_clicked(self, _):
+        """Gathers UI data DIRECTLY from widgets and saves to JobRow format"""
+        final_data = JobsDataModel.create_empty_job()
+        final_data["name"] = self.entry_name.get_text()
+        final_data["output"]["directory"] = self.entry_output_dir.get_text()
+        final_data["output"]["filename"] = self.entry_output_filename.get_text()
+        final_data["output"]["container"] = self.selected_container
+        final_data["output"]["container_parameters"] = self.job_data["output"].get("container_parameters", [])
+        final_data["sources"]["files"] = self.source_paths
+
+        final_streams = []
+        max_job_duration = 0.0
+        
+        # 1. Iterate through the actual ListBox items
+        curr = self.lst_source_streams.get_first_child()
+        while curr:
+            # 2. Only pull data from actual Stream Rows (skipping file headers)
+            if isinstance(curr, SourceStreamRow):
+                # 3. Pull the LIVE config from the row widget
+                stream_cfg = curr.get_stream_config()
+                
+                try:
+                    # Map back to the file index for the Runner
+                    f_idx = self.source_paths.index(curr.source_path)
+                    stream_cfg["file"] = f_idx
+                    
+                    # Cleanup template placeholder
+                    if stream_cfg.get("template") == "Manual / Custom Settings":
+                        stream_cfg["template"] = ""
+
+                    # --- DURATION CALCULATION START ---
+                    if stream_cfg.get("active"):
+                        # Get original stream duration (from the row's internal data)
+                        orig_duration = float(stream_cfg.get("duration") or 0)
+                        
+                        # Get trim values (assuming they are stored as time strings or seconds)
+                        # We use Core.Utils.time_to_seconds if they are strings
+                        from Core.Utils import time_to_seconds
+                        
+                        t_start = time_to_seconds(stream_cfg.get("trim_start") or "0")
+                        t_len = time_to_seconds(stream_cfg.get("trim_length") or "0")
+                        
+                        if t_len > 0:
+                            # User explicitly set a length
+                            eff_duration = t_len
+                        else:
+                            # Duration is the remainder of the file after the start trim
+                            eff_duration = max(0, orig_duration - t_start)
+                        
+                        if eff_duration > max_job_duration:
+                            max_job_duration = eff_duration
+                    # --- DURATION CALCULATION END ---
+                    
+                    final_streams.append(stream_cfg)
+                except ValueError:
+                    pass
+            curr = curr.get_next_sibling()
+
+        final_data["sources"]["streams"] = final_streams
+        # Save the calculated max duration for the JobRunner/UI
+        final_data["total_duration"] = max_job_duration
+
+        # 4. Final Validation & Save
+        valid, errs = JobsDataModel.validate_job_data(self.app, final_data)
+        if not valid:
+            self.show_error_dialog("\n".join(errs))
+            return
+
+        if self.on_job_setup_finished:
+            self.on_job_setup_finished(final_data)
+
+        self.destroy()

@@ -26,69 +26,63 @@ class JobsDataModel:
     def validate_job_data(app, job_data):
         """
         Checks if the job structure is sound and if referenced templates exist.
-        Returns (is_valid, list_of_errors)
+        Updated to support the nested 'transcoding_settings' structure.
         """
         errors = []
         
-        # 1. Check file indices
-        num_files = len(job_data.get("sources", {}).get("files", []))
-        streams = job_data.get("sources", {}).get("streams", [])
+        # 1. Check file existence
+        files = job_data.get("sources", {}).get("files", [])
+        if not files:
+            errors.append("Job must have at least one source file.")
         
-        # 2. Check template references
+        # 2. Check stream configuration
         available_templates = [t['name'] for t in TemplateDataModel.get_all_templates(app)]
         
         streams = job_data.get("sources", {}).get("streams", [])
         for i, stream in enumerate(streams):
-            # Only validate template if the stream is ENABLED
             if stream.get("active", False):
                 tpl_name = stream.get("template")
-                if not tpl_name:
-                    errors.append(f"Stream {i}: Active stream must have a template assigned.")
-                elif tpl_name not in available_templates:
-                    errors.append(f"Stream {i}: Referenced template '{tpl_name}' not found.")
                 
+                # Check the NESTED transcoding_settings
+                trans = stream.get("transcoding_settings", {})
+                
+                if not tpl_name or tpl_name == "Manual / Custom Settings":
+                    if not trans.get("codec"):
+                        errors.append(f"Stream {i} has no codec defined.")
+                else:
+                    if tpl_name not in available_templates:
+                        errors.append(f"Stream {i} references non-existent template: '{tpl_name}'")
+        
         return len(errors) == 0, errors
 
     @staticmethod
-    def load_from_file(file_path):
-        path = pathlib.Path(file_path)
-        if not path.exists():
-            raise FileNotFoundError(f"Job file not found: {file_path}")
+    def normalize_job(data):
+        defaults = JobsDataModel.create_empty_job()
+        for key in ["sources", "output"]:
+            if key not in data: data[key] = defaults[key].copy()
 
-        try:
-            with open(path, 'r') as f:
-                data = yaml.safe_load(f)
-            
-            if not data:
-                return [] if isinstance(data, list) else JobsDataModel.create_empty_job()
-            
-            # If it's a list, sanitize every item inside it
-            if isinstance(data, list):
-                return [JobsDataModel.sanitize_job(item) for item in data]
-            
-            return JobsDataModel.sanitize_job(data)
-
-        except Exception as e:
-            print(f"Error loading job file: {e}")
-            raise e
+        streams = data["sources"].get("streams", [])
+        for s in streams:
+            # Migration logic for older flat files
+            if "transcoding_settings" not in s:
+                s["transcoding_settings"] = {
+                    "codec": s.pop("codec", "copy"),
+                    "parameters": s.pop("settings", {}),
+                    "filters": s.pop("filters", {"mode": "simple", "entries": []})
+                }
+        return data
 
     @staticmethod
-    def sanitize_job(data):
-        """Helper to ensure a job dict has all required keys."""
-        defaults = JobsDataModel.create_empty_job()
-        if not data: return defaults
+    def load_from_file(file_path):
+        """Loads jobs from a YAML file and normalizes their structure."""
+        with open(file_path, 'r') as f:
+            data = yaml.safe_load(f)
         
-        # Deep merge logic
-        for key in ["sources", "output"]:
-            if key in data:
-                # Merge sub-dictionaries
-                temp = defaults[key].copy()
-                temp.update(data[key])
-                data[key] = temp
-        
-        # Merge top level
-        defaults.update(data)
-        return defaults
+        # If it's a list of jobs, normalize each one
+        if isinstance(data, list):
+            return [JobsDataModel.normalize_job(job) for job in data]
+        # If it's a single job dict
+        return JobsDataModel.normalize_job(data)
 
     @staticmethod
     def save_to_file(file_path, data):
@@ -98,8 +92,8 @@ class JobsDataModel:
 
         try:
             with open(path, 'w') as f:
-                # The model now handles the YAML dumping logic for both types
-                yaml.dump(data, f, sort_keys=False, indent=4)
+                # Use sort_keys=False to keep the structure readable and maintain order
+                yaml.dump(data, f, sort_keys=False, indent=4, default_flow_style=False)
             return True
         except Exception as e:
             print(f"Error saving file: {e}")

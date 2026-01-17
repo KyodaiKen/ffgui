@@ -1,8 +1,9 @@
-from Models.TemplateDataModel import TemplateDataModel
 from pathlib import Path
 import gi
 gi.require_version("Gtk", "4.0")
 from gi.repository import Gtk
+from Core.Utils import time_to_seconds
+from Models.TemplateDataModel import TemplateDataModel
 
 class FFmpegCmdCompiler:
     GLOBAL_OPTIONS = {'y', 'n', 'stats', 'loglevel', 'threads', 'f', 't', 'to', 'ss', 're', 'discard', 'benchmark'}
@@ -26,22 +27,17 @@ class FFmpegCmdCompiler:
             return []
 
         # --- PHASE 1: INPUTS ---
-        # We need to check if any stream belonging to a file is in 'copy' mode
         for f_idx, f_path in enumerate(src_files):
-            # Check if all active streams for THIS file use 'copy'
             file_streams = [s for s in active_streams if s.get('file') == f_idx]
             
-            # If all active streams for this specific file are 'copy', 
-            # we can use fast input seeking for the whole file.
+            # Fast-seeking logic: If all streams for this file are 'copy', 
+            # apply seeking before the input for maximum speed.
             if file_streams and all(FFmpegCmdCompiler._is_copy_stream(s) for s in file_streams):
-                # Note: This assumes all streams in the file share the same trim.
-                # If they differ, we take the first one found.
                 first_s = file_streams[0]
                 ss = first_s.get('trim_start')
                 t = first_s.get('trim_length')
-                
-                if ss: cmd_parts.extend(["-ss", ss])
-                if t:  cmd_parts.extend(["-t", t])
+                if ss: cmd_parts.extend(["-ss", str(time_to_seconds(ss))])
+                if t:  cmd_parts.extend(["-t", str(time_to_seconds(t))])
 
             cmd_parts.extend(["-i", str(f_path)])
 
@@ -51,6 +47,7 @@ class FFmpegCmdCompiler:
         container_short_name = output_cfg.get('container', 'auto')
 
         for stream in active_streams:
+            # 1. Resolve configuration (Template file OR Custom Row Settings)
             template_data = FFmpegCmdCompiler._resolve_template(stream)
             s_type = FFmpegCmdCompiler._determine_type(stream, template_data)
             t_char = FFmpegCmdCompiler.TYPE_MAP.get(s_type, 'v')
@@ -58,85 +55,88 @@ class FFmpegCmdCompiler:
             file_idx = stream.get('file', 0)
             src_idx = stream.get('index', 0)
             
+            # Calculate output specifier (e.g., :v:0)
             out_idx = type_counters.get(s_type, 0)
             specifier = f":{t_char}:{out_idx}"
             
-            # Map the stream
+            # 2. Map the stream
             cmd_parts.extend(["-map", f"{file_idx}:{src_idx}"])
 
-            # TRIM LOGIC: If NOT copy, put trim parameters AFTER map
+            # 3. Metadata & Language (from SourceStreamRow entries)
+            lang = stream.get('language')
+            if lang:
+                cmd_parts.extend([f"-metadata:s{specifier}", f"language={lang}"])
+            
+            metadata = stream.get('metadata', {})
+            for key, val in metadata.items():
+                if val:
+                    cmd_parts.extend([f"-metadata:s{specifier}", f"{key}={val}"])
+
+            # 4. Stream Delay (Offset)
+            delay_ms = stream.get('stream_delay', "0")
+            try:
+                if float(delay_ms or 0) != 0:
+                    cmd_parts.extend([f"-output_ts_offset{specifier}", f"{float(delay_ms)/1000.0}"])
+            except (ValueError, TypeError):
+                pass
+
+            # 5. Trim Logic (If NOT using fast-seek copy mode)
             if not FFmpegCmdCompiler._is_copy_stream(stream):
                 ss = stream.get('trim_start')
                 t = stream.get('trim_length')
-                if ss: cmd_parts.extend([f"-ss{specifier}", ss])
-                if t:  cmd_parts.extend([f"-t{specifier}", t])
+                if ss: cmd_parts.extend([f"-ss{specifier}", str(time_to_seconds(ss))])
+                if t:  cmd_parts.extend([f"-t{specifier}", str(time_to_seconds(t))])
 
-            # Apply Template Codecs/Params
-            if template_data:
-                codec = template_data.get('codec', 'copy')
-                cmd_parts.extend([f"-c{specifier}", codec])
+            # 6. Codecs and Parameters
+            codec = template_data.get('codec', 'copy')
+            cmd_parts.extend([f"-c{specifier}", codec])
 
-                params = template_data.get('parameters', {}).get('options', {})
-                for key, val in params.items():
-                    if key in FFmpegCmdCompiler.GLOBAL_OPTIONS:
-                        cmd_parts.extend([f"-{key}", str(val)])
-                    else:
-                        cmd_parts.extend([f"-{key}{specifier}", str(val)])
+            params = template_data.get('parameters', {}).get('options', {})
+            for key, val in params.items():
+                if key in FFmpegCmdCompiler.GLOBAL_OPTIONS:
+                    cmd_parts.extend([f"-{key}", str(val)])
+                else:
+                    cmd_parts.extend([f"-{key}{specifier}", str(val)])
 
-                # Filters
-                filter_data = template_data.get('filters', {})
-                if filter_data.get('mode') == 'simple':
-                    f_str = FFmpegCmdCompiler._build_simple_filter_string(filter_data.get('entries', []))
-                    if f_str:
-                        cmd_parts.extend([f"-{t_char}f{specifier}", f_str])
+            # 7. Filters
+            filter_data = template_data.get('filters', {})
+            if filter_data.get('mode') == 'simple':
+                f_str = FFmpegCmdCompiler._build_simple_filter_string(filter_data.get('entries', []))
+                if f_str:
+                    # FFmpeg uses -vf, -af, -sf but also -filter:v:0
+                    cmd_parts.extend([f"-filter{specifier}", f_str])
 
+            # 8. Dispositions
             FFmpegCmdCompiler._apply_disposition_deltas(container_short_name, cmd_parts, specifier, stream)
+            
+            # Increment counter for this type
             type_counters[s_type] = out_idx + 1
 
-        cmd_parts += ["-progress", "pipe:1"] #Add progress to stdout redirection
+        # --- PHASE 3: OUTPUT FILE ---
+        cmd_parts += ["-progress", "pipe:1"] 
 
-        # Setup Output Metadata
         out_dir = output_cfg.get('directory', '.')
         out_filename = (output_cfg.get('filename') or "").strip()
+        source_path = Path(src_files[0]) if src_files else None
 
-        # Determine Source Path for naming
-        # Safely get the first file from 'src_files'
-        source_path = None
-        if src_files and len(src_files) > 0:
-            source_path = Path(src_files[0])
-
-        # Final Path Generation
+        # Container / Extension Resolution
         if container_short_name == "auto":
-            if not out_filename and source_path:
-                # Use original filename and extension
-                final_output_path = Path(out_dir) / source_path.name
-            else:
-                # Fallback: custom name or source stem, otherwise 'output'
-                name_to_use = out_filename or (source_path.stem if source_path else "output")
-                # Original extension or .mkv
-                ext = source_path.suffix if source_path else ".mkv"
-                final_output_path = Path(out_dir) / f"{name_to_use}{ext}"
-        else:
-            # Explicit Container Selection
             name_to_use = out_filename or (source_path.stem if source_path else "output")
-            
-            from gi.repository import Gtk
+            ext = source_path.suffix if source_path else ".mkv"
+            final_output_path = Path(out_dir) / f"{name_to_use}{ext}"
+        else:
+            name_to_use = out_filename or (source_path.stem if source_path else "output")
+            # Lookup extension from format data
             app = Gtk.Application.get_default()
             all_formats = getattr(app, 'ffmpeg_data', {}).get('formats', [])
             fmt_obj = next((f for f in all_formats if f['name'] == container_short_name), None)
-            
-            ext_suffix = output_cfg.get('container', "mkv")
-            if fmt_obj and fmt_obj.get('extensions'):
-                ext_suffix = fmt_obj['extensions'][0]
-            
+            ext_suffix = fmt_obj['extensions'][0] if fmt_obj and fmt_obj.get('extensions') else container_short_name
             final_output_path = Path(out_dir) / f"{name_to_use}.{ext_suffix}"
 
-        # Output container format options
+        # Container parameters (e.g., movflags)
         out_container_params = output_cfg.get('container_parameters', [])
         for parm in out_container_params:
-            key = parm.get('name')
-            val = parm.get('value')
-            
+            key, val = parm.get('name'), parm.get('value')
             if key and val is not None:
                 cmd_parts.append(f"-{key}")
                 if isinstance(val, list):
@@ -144,9 +144,7 @@ class FFmpegCmdCompiler:
                 else:
                     cmd_parts.append(str(val))
 
-        # 5. Add final path
         cmd_parts.append(str(final_output_path.resolve()))
-
         return cmd_parts
 
     @staticmethod
@@ -191,26 +189,36 @@ class FFmpegCmdCompiler:
 
     @staticmethod
     def _is_copy_stream(stream):
-        """Helper to check if a stream is set to copy mode."""
-        template_val = stream.get('template')
-        if not template_val:
-            return True # Default is copy
-        
-        # If it's a string, we need to look it up
-        if isinstance(template_val, str):
-            app = Gtk.Application.get_default()
-            template_data = TemplateDataModel.get_template_by_name(app, template_val)
-            if template_data:
-                return template_data.get('codec') == 'copy'
-        elif isinstance(template_val, dict):
-            return template_val.get('codec') == 'copy'
-        
-        return True
+        """Checks the resolved codec to see if it's 'copy'."""
+        resolved = FFmpegCmdCompiler._resolve_template(stream)
+        return resolved.get('codec') == 'copy'
 
     @staticmethod
     def _resolve_template(stream):
-        template_val = stream.get('template')
-        if isinstance(template_val, str):
+        """
+        Loads a template. Prioritizes ephemeral 'settings' and 'filters' 
+        stored in the stream object over the named template file.
+        """
+        transcoding_settings = stream.get('transcoding_settings', {})
+        
+        # 1. If we have settings or a codec explicitly defined in this stream
+        if transcoding_settings.get('parameters') or transcoding_settings.get('codec'):
+            return {
+                "type": stream.get('type', 'video'),
+                "codec": transcoding_settings.get('codec', 'copy'),
+                # Standardize to the 'options' wrapper the compiler expects
+                "parameters": {"options": transcoding_settings.get('parameters', {})},
+                "filters": transcoding_settings.get('filters', {"mode": "simple", "entries": []})
+            }
+
+        # 2. Fallback to named template lookup
+        template_name = stream.get('template')
+        if isinstance(template_name, str) and template_name not in ["", "Manual / Custom Settings"]:
             app = Gtk.Application.get_default()
-            return TemplateDataModel.get_template_by_name(app, template_val)
-        return template_val
+            # Standalone test script safety:
+            if app:
+                tpl = TemplateDataModel.get_template_by_name(app, template_name)
+                if tpl: return tpl
+        
+        # 3. Last resort: Default Copy
+        return {"codec": "copy", "type": stream.get('type', 'video')}

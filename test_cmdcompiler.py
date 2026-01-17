@@ -2,10 +2,15 @@ import argparse
 import sys
 import os
 import traceback
+import gi
+gi.require_version("Gtk", "4.0")
+from gi.repository import Gtk
 from Models.JobsDataModel import JobsDataModel
 from Core.FFmpegCmdCompiler import FFmpegCmdCompiler
 
 def main():
+    app = Gtk.Application(application_id="com.debug.compiler")
+
     parser = argparse.ArgumentParser(description="FFmpeg Command Compiler Debugger")
     parser.add_argument("file", help="Path to the jobs YAML file")
     parser.add_argument("--verbose", action="store_true", help="Print extra job info")

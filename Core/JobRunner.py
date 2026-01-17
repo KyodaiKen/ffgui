@@ -54,13 +54,10 @@ class JobRunner:
         print(f"Executing: {' '.join(full_cmd)}")
         
         # Determine total duration from stream metadata
-        max_duration = 0
-        active_streams = [s for s in job.get('sources', {}).get('streams', []) if s.get('active')]
-        
-        for s in active_streams:
-            stream_dur = s.get('duration', 0)
-            if stream_dur > max_duration:
-                max_duration = stream_dur
+        max_duration = job.get("total_duration", 0) * 1e+6 #Convert to microseconds
+
+        if max_duration == 0:
+            print("WARNING: No duration for progress calculation!")
 
         # Use the found duration, or fallback to 1 to avoid division by zero
         total_duration_us = max_duration if max_duration > 0 else 1
