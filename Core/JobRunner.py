@@ -170,8 +170,6 @@ class JobRunner:
         else:
             current_us = self._get_safe_int(data, 'out_time_us')
 
-        print(f"c:{current_us} t:{duration_us}")
-
         # 2. Calculate Percentage
 
         if duration_us > 0:
