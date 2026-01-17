@@ -89,10 +89,14 @@ class MainWindow(Gtk.ApplicationWindow):
         self.pb.set_text("")
         self.pb.set_show_text(True)
         self.pb.set_fraction(0.0)
+        self.btn_retry_failed = Gtk.Button(label="Retry Failed")
+        self.btn_retry_failed.connect("clicked", self.on_retry_failed_clicked)
+        self.btn_retry_failed.set_visible(False)
         self.btn_start = Gtk.Button(label="Start")
         self.btn_start.connect("clicked", self.on_start_clicked)
         bottom_box.append(label)
         bottom_box.append(self.pb)
+        bottom_box.append(self.btn_retry_failed)
         bottom_box.append(self.btn_start)
         box_bottom.append(bottom_box)
 
@@ -219,10 +223,23 @@ class MainWindow(Gtk.ApplicationWindow):
         alert.choose(self, None, self._on_clear_confirmed)
 
     def _on_clear_confirmed(self, alert, result):
-        if result == 1:
-            # result 1 corresponds to "Clear All" button index
-            self.listbox.remove_all()
-            print("Job list cleared.")
+        try:
+            # This is the step that was missing:
+            response = alert.choose_finish(result)
+            
+            if response == 1:  # 1 is "Clear All"
+                # Use remove_all() or iterate and remove
+                self.listbox.remove_all()
+                
+                # Reset UI elements
+                self.btn_start.set_label("Start")
+                self.btn_retry_failed.set_visible(False)
+                self.pb.set_fraction(0.0)
+                self.pb.set_text("")
+                
+                print("Job list cleared.")
+        except Exception as e:
+            print(f"Error closing dialog: {e}")
 
     def on_create_job(self, action, param):
         # We pass "create" mode. The JobSetupWindow will use JobsDataModel.create_empty_job()
@@ -400,42 +417,68 @@ class MainWindow(Gtk.ApplicationWindow):
         if self.app:
             self.app.quit()
 
-    def on_start_clicked(self, button):
-        """Triggered by the Start button"""
+
+    def _start_batch(self, jobs_list):
+        """Common logic to launch the JobRunner"""
         if self.is_running:
             return
 
-        # 1. Collect all jobs currently in the listbox
-        jobs_to_run = []
-        child = self.listbox.get_first_child()
-        while child:
-            if isinstance(child, JobRow):
-                # Initialize status for the runner to pick up
-                child.job_data['_internal_status'] = JobStatus.PENDING
-                jobs_to_run.append(child.job_data)
-            child = child.get_next_sibling()
-
-        if not jobs_to_run:
-            self._show_error("Queue Empty", "Please add at least one job before starting.")
-            return
-
-        # 2. Get the executable path directly from the app instance
-        # This uses the logic defined in your setup_ffmpeg_execs method
         ffmpeg_bin = self.app.ffmpeg_full_exec_path
-
-        # 3. Setup the Runner
         runner = JobRunner(
-            job_list=jobs_to_run,
+            job_list=jobs_list,
             ffmpeg_executable_path=ffmpeg_bin,
             update_callback=self._runner_thread_callback
         )
 
-        # 4. Lock UI and Start Background Thread
         self.is_running = True
         self.btn_start.set_sensitive(False)
+        self.btn_retry_failed.set_sensitive(False)
         self.btn_start.set_label("Running...")
         
         threading.Thread(target=runner.run, daemon=True).start()
+
+    def on_start_clicked(self, button):
+        """Triggered by the regular Start button (runs all non-completed jobs)"""
+        jobs_to_run = []
+        child = self.listbox.get_first_child()
+        while child:
+            if isinstance(child, JobRow):
+                child.job_data['_internal_status'] = JobStatus.PENDING
+                jobs_to_run.append(child.job_data)
+            child = child.get_next_sibling()
+        
+        if jobs_to_run:
+            self._start_batch(jobs_to_run)
+        else:
+            self._show_error("Queue Empty", "No pending jobs to run.")
+
+    def on_retry_failed_clicked(self, button):
+        """Finds all failed jobs, resets them, and starts a new run."""
+        failed_jobs = []
+        child = self.listbox.get_first_child()
+        while child:
+            if isinstance(child, JobRow) and child.job_data.get('_internal_status') == JobStatus.FAILED:
+                # Reset Job Data
+                child.job_data['_internal_status'] = JobStatus.PENDING
+                child.job_data['_progress_percent'] = 0
+                if '_error_msg' in child.job_data:
+                    del child.job_data['_error_msg']
+                
+                # Reset Row UI
+                child.img_status.set_visible(False)
+                child.progress_bar.set_fraction(0.0)
+                child.update_status("Pending Retry...")
+                
+                # Disable the error log action again
+                action = child.action_group.lookup_action("view_error")
+                if action:
+                    action.set_enabled(False)
+                
+                failed_jobs.append(child.job_data)
+            child = child.get_next_sibling()
+
+        if failed_jobs:
+            self._start_batch(failed_jobs)
 
     def _runner_thread_callback(self, job_info, total_info, total_pct):
         """
@@ -445,12 +488,9 @@ class MainWindow(Gtk.ApplicationWindow):
         GLib.idle_add(self._update_ui_progress, job_info, total_info, total_pct)
 
     def _update_ui_progress(self, job_info, total_info, total_pct):
-        """Updates the progress bars and individual job rows on the main thread."""
-        # Update Total Progress (The bottom bar)
         self.pb.set_fraction(total_pct / 100.0)
         self.pb.set_text(total_info)
 
-        # Iterate rows to find the one being processed
         child = self.listbox.get_first_child()
         while child:
             if isinstance(child, JobRow):
@@ -458,19 +498,51 @@ class MainWindow(Gtk.ApplicationWindow):
                 
                 if status == JobStatus.RUNNING:
                     child.update_status(job_info)
+                    child.img_status.set_visible(False)
+                
                 elif status == JobStatus.COMPLETED:
                     child.update_status("Completed")
                     child.progress_bar.set_fraction(1.0)
+                    child.img_status.set_from_icon_name("emblem-ok-symbolic")
+                    child.img_status.add_css_class("success-icon") # Green via CSS
+                    child.img_status.set_visible(True)
+                
                 elif status == JobStatus.FAILED:
                     child.update_status("Failed")
+                    child.img_status.set_from_icon_name("window-close-symbolic")
+                    child.img_status.add_css_class("error-icon") # Red via CSS
+                    child.img_status.set_visible(True)
+                    
+                    # Store the error log in the row
+                    child.error_log = child.job_data.get('_error_msg', "Unknown FFMPEG error")
+                    
+                    # Enable the 'View Error' action in the context menu
+                    action = child.action_group.lookup_action("view_error")
+                    if action:
+                        action.set_enabled(True)
 
+            child = child.get_next_sibling()
+
+        has_failures = False
+        child = self.listbox.get_first_child()
+        while child:
+            if isinstance(child, JobRow):
+                # ... (your existing status image logic) ...
+                if child.job_data.get('_internal_status') == JobStatus.FAILED:
+                    has_failures = True
             child = child.get_next_sibling()
 
         # Handle Final State
         if total_pct >= 100:
             self.is_running = False
             self.btn_start.set_sensitive(True)
-            self.btn_start.set_label("Start")
+            self.btn_retry_failed.set_visible(has_failures)
+            self.btn_retry_failed.set_sensitive(True)
+            if has_failures:
+                start_text = "Start All"
+            else:
+                start_text = "Start"
+            self.btn_start.set_label(start_text)
             self.pb.set_text("Batch Finished")
         
         return False # Required for GLib.idle_add to stop repeating

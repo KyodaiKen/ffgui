@@ -65,7 +65,7 @@ class SinglePickerWindow(Gtk.ApplicationWindow):
             if 'is_global' in item:
                 type_text = "Global" if item['is_global'] else "Private"
                 lbl_type = Gtk.Label(xalign=1) # Now xalign=1 works because the box is full width
-                lbl_type.set_markup(f"<span size='small' alpha='50%'>[{type_text}]</span>")
+                lbl_type.set_markup(f"<span alpha='70%'>[{type_text}]</span>")
                 header.append(lbl_type)
             
             box.append(header)

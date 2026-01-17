@@ -1,5 +1,5 @@
 import gi
-import os
+import pathlib
 gi.require_version("Gtk", "4.0")
 from gi.repository import Gtk, Gdk, Gio, Pango
 from UI.TemplateEditorWindow import TemplateEditorWindow
@@ -7,15 +7,19 @@ from UI.Icons import Icons
 from Models.TemplateDataModel import TemplateDataModel
 
 class TemplateManagerWindow(Gtk.ApplicationWindow):
-    def __init__(self, parent_window, **kwargs):
-        super().__init__(**kwargs, title="Manage Transcoding Templates")
-        self.set_default_size(720, 500)
-        self.set_size_request(720, 500)
+    def __init__(self, parent_window, picker_mode=False, stream_type=None, on_select=None, **kwargs):
+        super().__init__(**kwargs, title="Select Template" if picker_mode else "Manage Templates")
+        self.app = Gtk.Application.get_default()
+        self.picker_mode = picker_mode
+        self.target_type = stream_type # e.g., 'video' or 'audio'
+        self.on_select = on_select     # Callback for picker mode
+        
+        # Window Config
+        self.set_default_size(750, 550)
         self.set_transient_for(parent_window)
         self.set_modal(True)
 
-        # --- UI Setup ---
-        # HeaderBar with Search
+        # Header with Search
         hb = Gtk.HeaderBar()
         self.set_titlebar(hb)
         self.search_entry = Gtk.SearchEntry(placeholder_text="Filter templates...")
@@ -23,29 +27,44 @@ class TemplateManagerWindow(Gtk.ApplicationWindow):
         hb.set_title_widget(self.search_entry)
 
         # Main Layout
-        main_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=6)
-        main_box.props.margin_start = 6
-        main_box.props.margin_end = 6
-        main_box.props.margin_top = 6
-        main_box.props.margin_bottom = 6
+        main_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=8, margin_bottom=10, margin_end=10, margin_start=10, margin_top=10)
         self.set_child(main_box)
 
         # ListBox
         self.lst_templates = Gtk.ListBox()
         self.lst_templates.set_selection_mode(Gtk.SelectionMode.SINGLE)
         self.lst_templates.add_css_class("boxed-list")
-        
+        self.lst_templates.connect("selected-rows-changed", self.on_selection_changed)
+
         scroll = Gtk.ScrolledWindow(vexpand=True)
         scroll.set_child(self.lst_templates)
         main_box.append(scroll)
 
-        # Toolbar
+        # Toolbar / Action Box
         action_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
+        main_box.append(action_box)
+
         self.btn_new = Gtk.Button(label="New Template", icon_name="list-add-symbolic")
+        self.btn_new.set_tooltip_text("Create a brand new transcoding template")
         self.btn_new.connect("clicked", self.on_new_template)
         action_box.append(self.btn_new)
-        
-        main_box.append(action_box)
+
+        self.btn_clone = Gtk.Button(label="Clone", icon_name="edit-copy-symbolic")
+        self.btn_clone.set_tooltip_text("Create a copy of the selected template")
+        self.btn_clone.set_sensitive(False)
+        self.btn_clone.connect("clicked", self.on_clone_clicked)
+        action_box.append(self.btn_clone)
+
+        # Spacer to push Apply button to the right
+        action_box.append(Gtk.Separator(orientation=Gtk.Orientation.HORIZONTAL, hexpand=True, opacity=0))
+
+        if self.picker_mode:
+            self.btn_apply = Gtk.Button(label="Apply Template")
+            self.btn_apply.add_css_class("suggested-action")
+            self.btn_apply.set_tooltip_text("Confirm selection and return to job setup")
+            self.btn_apply.set_sensitive(False)
+            self.btn_apply.connect("clicked", self.on_apply_clicked)
+            action_box.append(self.btn_apply)
 
         self.populate_ui()
 
@@ -53,110 +72,92 @@ class TemplateManagerWindow(Gtk.ApplicationWindow):
         while child := self.lst_templates.get_first_child():
             self.lst_templates.remove(child)
         
-        # Pass self.app (the Gtk.Application instance)
-        templates = TemplateDataModel.get_all_templates(Gtk.Application.get_default())
+        # Logic: If target_type is set, filter by that type. Otherwise get all.
+        if self.target_type:
+            templates = TemplateDataModel.get_templates_by_type(self.app, self.target_type)
+        else:
+            templates = TemplateDataModel.get_all_templates(self.app)
         
         for t in templates:
             if not filter_text or filter_text.lower() in t["name"].lower():
                 self.lst_templates.append(self._create_row(t))
 
     def _create_row(self, t):
-        row_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
-        row_box.set_margin_top(4)     # Add a tiny bit of breathing room
-        row_box.set_margin_bottom(4)
-        # Type Badge
-        lbl_type = Gtk.Label(label=t["type"])
+        row_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6, margin_bottom=6, margin_end=6, margin_start=6, margin_top=6)
+        
+        # 1. Type Badge
+        lbl_type = Gtk.Label(label=t["type"].upper())
         lbl_type.add_css_class("caption")
         lbl_type.set_width_chars(12)
         row_box.append(lbl_type)
 
-        t_type = t.get("type", "unknown").lower()
-        icon_name = Icons.get_icon_for_type(t_type)
-        img_type = Gtk.Image.new_from_icon_name(icon_name)
-        img_type.set_tooltip_text(f"Type: {t_type.capitalize()}")
-        row_box.append(img_type)
+        # 2. Icon
+        icon_name = Icons.get_icon_for_type(t.get("type", "unknown").lower())
+        row_box.append(Gtk.Image.new_from_icon_name(icon_name))
 
-        # Name + Read-only icon if applicable
-        name_box = Gtk.Box(spacing=6, hexpand=True)
-        lbl_name = Gtk.Label(label=f"<b>{t['name']}</b>", use_markup=True, xalign=0)
-        name_box.append(lbl_name)
+        # 3. Name (with Ellipsizing in the Middle)
+        lbl_name = Gtk.Label(use_markup=True, xalign=0, hexpand=True)
+        lbl_name.set_markup(f"<b>{t['name']}</b>")
+        lbl_name.set_ellipsize(Pango.EllipsizeMode.MIDDLE) # Requirement met
+        row_box.append(lbl_name)
         
         if t.get("readonly"):
             img_lock = Gtk.Image.new_from_icon_name("changes-prevent-symbolic")
-            img_lock.set_tooltip_text("System Template (Read-Only)")
-            name_box.append(img_lock)
-        
-        row_box.append(name_box)
+            img_lock.set_tooltip_text("System Template")
+            row_box.append(img_lock)
 
-        # Origin
+        # 4. Origin
         lbl_origin = Gtk.Label(label=t["origin"])
         lbl_origin.add_css_class("dim-label")
         row_box.append(lbl_origin)
 
-        # Action Buttons
+        # 5. Buttons
         btn_edit = Gtk.Button(icon_name="document-edit-symbolic")
         btn_edit.connect("clicked", lambda *_: self.on_edit_clicked(t))
         row_box.append(btn_edit)
 
-        btn_rename = Gtk.Button(icon_name="insert-text-symbolic")
-        # Disable rename button if the file is read-only
-        btn_rename.set_sensitive(not t.get("readonly")) 
-        btn_rename.connect("clicked", lambda *_: self.on_rename_clicked(t))
-        btn_rename.props.margin_end = 24
-        row_box.append(btn_rename)
+        # Metadata for row
+        row = Gtk.ListBoxRow(child=row_box)
+        row._data = t
+        return row
 
-        return Gtk.ListBoxRow(child=row_box)
+    def on_selection_changed(self, _):
+        row = self.lst_templates.get_selected_row()
+        has_selection = row is not None
+        self.btn_clone.set_sensitive(has_selection)
+        if self.picker_mode:
+            self.btn_apply.set_sensitive(has_selection)
 
     def on_new_template(self, _):
-        # Use Model to generate the blank starting data
-        new_data = TemplateDataModel.create_empty_template()
+        new_data = TemplateDataModel.create_empty_template(self.target_type or "video")
         win = TemplateEditorWindow(self, template=new_data, on_save_callback=lambda _: self.populate_ui())
         win.present()
 
-    def on_edit_clicked(self, template):
-        # If it's read-only, we treat it like a "Clone" so the user
-        # saves a new version in their User directory instead of failing to save.
-        is_readonly = template.get("readonly", False)
+    def on_clone_clicked(self, _):
+        row = self.lst_templates.get_selected_row()
+        if not row: return
         
         win = TemplateEditorWindow(
             self, 
-            template=template, 
-            clone_mode=is_readonly, # Force clone mode for system templates
+            template=row._data, 
+            clone_mode=True, 
             on_save_callback=lambda _: self.populate_ui()
         )
-        if is_readonly:
-            win.set_title(f"Copying System Template: {template['name']}")
-            
         win.present()
 
-    def on_rename_clicked(self, template):
-        entry = Gtk.Entry(text=template['name'])
-        box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=10)
-        box.set_margin_top(12)
-        box.set_margin_bottom(12)
-        box.append(Gtk.Label(label=f"Enter new name for '{template['name']}':"))
-        box.append(entry)
-
-        dialog = Gtk.MessageDialog(
-            transient_for=self, 
-            modal=True, 
-            text="Rename Template", 
-            buttons=Gtk.ButtonsType.OK_CANCEL
+    def on_edit_clicked(self, template):
+        is_readonly = template.get("readonly", False)
+        win = TemplateEditorWindow(
+            self, 
+            template=template, 
+            clone_mode=is_readonly, 
+            on_save_callback=lambda _: self.populate_ui(),
+            locked_type=self.target_type
         )
-        dialog.get_content_area().append(box)
-        
-        def on_response(d, res):
-            if res == Gtk.ResponseType.OK:
-                new_name = entry.get_text().strip()
-                if new_name and new_name != template['name']:
-                    # Call the Model to handle the file rename
-                    success, msg = TemplateDataModel.rename_template(template['path'], new_name)
-                    if success:
-                        self.populate_ui()
-                    else:
-                        err = Gtk.AlertDialog(message=f"Error: {msg}")
-                        err.show(self)
-            d.destroy()
+        win.present()
 
-        dialog.connect("response", on_response)
-        dialog.present()
+    def on_apply_clicked(self, _):
+        row = self.lst_templates.get_selected_row()
+        if row and self.on_select:
+            self.on_select(row._data['name'])
+            self.destroy()

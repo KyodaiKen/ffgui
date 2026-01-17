@@ -179,6 +179,18 @@ class FFGuiApp(Gtk.Application):
                 margin: 0;
             }
 
+            .success-icon {
+                color: #2ec27e; /* GNOME Green */
+            }
+            .error-icon {
+                color: #e01b24; /* GNOME Red */
+            }
+
+            #ffmpeg_error_log {
+                font-family: "JetBrains Mono NL", monospace;
+                font-size: 10pt;
+            }
+
             /* TemplateEditorWindow */
             .codec-tag { background-color: alpha(@theme_fg_color, 0.05); border: 1px solid mix(@theme_fg_color, @theme_bg_color, 0.8); border-radius: 6px; padding: 2px; }
             .codec-tag label { margin-left: 6px; margin-right: 6px; font-weight: bold; }

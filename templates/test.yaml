@@ -1,0 +1,7 @@
+type: video
+codec: av1_amf
+parameters:
+    options: {}
+filters:
+    mode: simple
+    entries: []

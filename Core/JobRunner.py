@@ -31,9 +31,16 @@ class JobRunner:
         
         for idx, job in enumerate(self.job_list):
             job['_internal_status'] = JobStatus.RUNNING
-            self._execute_job(job, idx, total_jobs)
-            job['_internal_status'] = JobStatus.COMPLETED
-            job['_progress_percent'] = 100
+            # _execute_job now returns True if success, False if failed
+            success = self._execute_job(job, idx, total_jobs)
+            
+            if success:
+                job['_internal_status'] = JobStatus.COMPLETED
+                job['_progress_percent'] = 100
+            else:
+                job['_internal_status'] = JobStatus.FAILED
+                # We don't force 100% on failure so the progress bar 
+                # shows where it actually stopped.
             
         # Final update
         self.update_callback("All jobs finished.", "100%, ETA 00:00:00", 100)
@@ -58,6 +65,8 @@ class JobRunner:
         # Use the found duration, or fallback to 1 to avoid division by zero
         total_duration_us = max_duration if max_duration > 0 else 1
 
+        full_log = []
+
         # 2. Launch Process
         if os.name == 'nt':
             flags = 0x08000000 # CREATE_NO_WINDOW
@@ -81,8 +90,11 @@ class JobRunner:
         progress_data = {}
         while True:
             line = process.stdout.readline()
-            if not line and process.poll() is not None:
-                break
+            if not line:
+                if process.poll() is not None: break
+                continue
+
+            full_log.append(line.strip())
             
             # If FFmpeg errors out immediately, it won't have '=' in the line
             if "=" in line:
@@ -101,6 +113,16 @@ class JobRunner:
                     print(f"FFmpeg: {line.strip()}")
 
         process.wait()
+
+        # CHECK EXIT CODE
+        if process.returncode != 0:
+            # Save the last 50 lines of the log to the job data for the UI to show
+            # This prevents memory bloat while giving enough context for errors
+            error_context = "\n".join(full_log[-50:])
+            job['_error_msg'] = f"FFmpeg exited with code {process.returncode}\n\nLast output:\n{error_context}"
+            return False
+            
+        return True
 
     def _format_size(self, bytes_str):
         try:

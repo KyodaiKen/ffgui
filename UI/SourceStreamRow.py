@@ -6,6 +6,7 @@ from gi.repository import Gtk, Pango
 from UI.MetadataManagerWindow import MetadataManagerWindow
 from UI.FlagsPickerWindow import FlagsPickerWindow
 from UI.LanguagePickerWindow import LanguagePickerWindow
+from UI.TemplateManagerWindow import TemplateManagerWindow
 from Core.Utils import seconds_to_time, time_to_seconds
 
 class SourceStreamRow(Gtk.ListBoxRow):
@@ -204,10 +205,10 @@ class SourceStreamRow(Gtk.ListBoxRow):
         self.update_meta_button_style()
 
     def on_search_tpl_click(self, button):
-        from UI.TemplatePickerWindow import TemplatePickerWindow
-        self.pw = TemplatePickerWindow(
+        # Use the consolidated constructor
+        self.pw = TemplateManagerWindow(
             parent_window=self.parent_window,
-            current_val=self.ent_tpl.get_text(),
+            picker_mode=True,
             stream_type=self.stream_type,
             on_select=self.apply_template
         )

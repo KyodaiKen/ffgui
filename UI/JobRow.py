@@ -4,6 +4,7 @@ from UI.BatchOutputDirWindow import BatchOutputDirWindow
 gi.require_version("Gdk", "4.0")
 from gi.repository import Gtk, Gio, Gdk
 from UI.JobSetupWindow import JobSetupWindow
+from UI.TemplateManagerWindow import TemplateManagerWindow
 from UI.Constants import CONTEXT_MENU_XML
 
 class JobRow(Gtk.ListBoxRow):
@@ -12,22 +13,28 @@ class JobRow(Gtk.ListBoxRow):
         self.job_id = job_id
         self.job_data = job_data
         self.app = app
+        self.error_log = ""
 
         vbox = Gtk.Box(orientation=Gtk.Orientation.VERTICAL)
         self.set_child(vbox)
 
-        self.label = Gtk.Label(xalign=0)
+        # Header box to hold Label and the Status Icon
+        header_hbox = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=10)
+        self.label = Gtk.Label(xalign=0, hexpand=True)
+        
+        # The status icon (Checkmark/X)
+        self.img_status = Gtk.Image()
+        self.img_status.set_visible(False) # Hide by default
+        
+        header_hbox.append(self.label)
+        header_hbox.append(self.img_status)
+        vbox.append(header_hbox)
 
-        # Add a sub-label for source info
-        src_count = len(job_data["sources"]["files"])
-        strm_count = len(job_data["sources"]["streams"])
         self.lbl_info = Gtk.Label(xalign=0)
-        self.lbl_info.set_markup(f"<span size='small' alpha='70%'>{src_count} Files, {strm_count} Streams</span>")
 
         self.progress_bar = Gtk.ProgressBar(hexpand=True)
         self.progress_bar.set_show_text(True)
         
-        vbox.append(self.label)
         vbox.append(self.lbl_info)
         vbox.append(self.progress_bar)
         
@@ -43,12 +50,13 @@ class JobRow(Gtk.ListBoxRow):
         builder = Gtk.Builder.new_from_string(CONTEXT_MENU_XML, -1)
         menu_model = builder.get_object("context-menu")
 
-        action_group = Gio.SimpleActionGroup.new()
+        self.action_group = Gio.SimpleActionGroup.new()
         
-        def add_act(name, callback):
+        def add_act(name, callback, enabled=True):
             act = Gio.SimpleAction.new(name, None)
             act.connect("activate", callback)
-            action_group.add_action(act)
+            act.set_enabled(enabled)
+            self.action_group.add_action(act)
 
         add_act("job_setup", self.on_job_setup)
         add_act("remove_job", self.on_remove)
@@ -58,12 +66,15 @@ class JobRow(Gtk.ListBoxRow):
         add_act("toggle_audio", lambda a, p: self.on_smart_toggle("audio"))
         add_act("toggle_subtitles", lambda a, p: self.on_smart_toggle("subtitles"))
 
+        # Error Log Action (Disabled by default)
+        add_act("view_error", self.on_view_error, enabled=False)
+
         add_act("batch_tpl_video", lambda a, p: self.on_batch_template("video"))
         add_act("batch_tpl_audio", lambda a, p: self.on_batch_template("audio"))
         add_act("batch_tpl_subtitle", lambda a, p: self.on_batch_template("subtitles"))
         add_act("batch_chg_out_dir", self.on_batch_chg_output_dir)
         
-        self.insert_action_group("context", action_group)
+        self.insert_action_group("context", self.action_group)
 
         self.popover = Gtk.PopoverMenu.new_from_model(menu_model)
         self.popover.set_parent(self)
@@ -96,7 +107,7 @@ class JobRow(Gtk.ListBoxRow):
         
         src_count = len(files)
         strm_count = len(streams)
-        self.lbl_info.set_markup(f"<span size='small' alpha='70%'>{src_count} Files, {strm_count} Streams</span>")
+        self.lbl_info.set_text(f"{src_count} Files, {strm_count} Streams")
 
     def create_action(self, name, callback):
         action = Gio.SimpleAction.new(name, None)
@@ -176,14 +187,14 @@ class JobRow(Gtk.ListBoxRow):
             print(f"Dialog error: {e}")
 
     def on_batch_template(self, target_type):
-        """Opens a picker filtered by the selected stream type"""
-        from UI.TemplatePickerWindow import TemplatePickerWindow
+        """Opens the unified Manager in picker mode filtered by stream type"""
         self._current_batch_type = target_type 
 
-        picker = TemplatePickerWindow(
+        # Initialize in picker_mode
+        picker = TemplateManagerWindow(
             parent_window=self.get_root(),
-            current_val="",
-            stream_type=target_type,
+            picker_mode=True,           # New parameter
+            stream_type=target_type,    # New parameter (replaces current_val logic)
             on_select=self._apply_batch_template_to_selected
         )
         picker.present()
@@ -237,6 +248,39 @@ class JobRow(Gtk.ListBoxRow):
         main_window = self.get_root()
         if hasattr(main_window, "add_job"):
             main_window.add_job(final_job_data)
+
+    def on_view_error(self, action, param):
+        """Shows the error log in a scrollable window with monospace font."""
+        log_window = Gtk.Window(
+            title=f"Error Log: {self.job_data.get('name')}",
+            transient_for=self.get_root(),
+            modal=True,
+            default_width=800,
+            default_height=500
+        )
+
+        # Scrolled Window to allow navigation
+        scrolled = Gtk.ScrolledWindow()
+        scrolled.set_policy(Gtk.PolicyType.AUTOMATIC, Gtk.PolicyType.AUTOMATIC)
+        scrolled.set_margin_start(12)
+        scrolled.set_margin_end(12)
+        scrolled.set_margin_top(12)
+        scrolled.set_margin_bottom(12)
+        
+        # TextView for the log content
+        text_view = Gtk.TextView()
+        text_view.set_name("ffmpeg_error_log")
+        text_view.set_editable(False)
+        text_view.set_cursor_visible(False)
+        text_view.set_wrap_mode(Gtk.WrapMode.NONE) # Logs are easier to read without wrapping
+
+        # Insert the log text
+        buffer = text_view.get_buffer()
+        buffer.set_text(self.error_log or "No log data available.")
+
+        scrolled.set_child(text_view)
+        log_window.set_child(scrolled)
+        log_window.present()
 
     def on_smart_toggle(self, target_type):
         """Toggle streams using cached data with a fallback check."""

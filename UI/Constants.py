@@ -69,6 +69,12 @@ CONTEXT_MENU_XML = """
         </item>
     </section>
     <section>
+        <item>
+            <attribute name="label">View Error Log</attribute>
+            <attribute name="action">context.view_error</attribute>
+        </item>
+    </section>
+    <section>
         <attribute name='label'>Useful Tools</attribute>
         <submenu>
             <attribute name='label'>Stream Toggle</attribute>

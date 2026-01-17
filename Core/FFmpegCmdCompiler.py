@@ -93,7 +93,7 @@ class FFmpegCmdCompiler:
             FFmpegCmdCompiler._apply_disposition_deltas(container_short_name, cmd_parts, specifier, stream)
             type_counters[s_type] = out_idx + 1
 
-        cmd_parts += ["-progress", "-"] #Add progress to stdout redirection
+        cmd_parts += ["-progress", "pipe:1"] #Add progress to stdout redirection
 
         # Setup Output Metadata
         out_dir = output_cfg.get('directory', '.')
