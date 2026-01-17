@@ -1,4 +1,6 @@
 import gi
+
+from Models.TemplateDataModel import TemplateDataModel
 gi.require_version("Gdk", "4.0")
 from gi.repository import GLib, Gtk, Gio, Gdk, Pango
 from UI.SourceStreamRow import SourceStreamRow
@@ -234,84 +236,6 @@ class JobSetupWindow(Gtk.ApplicationWindow):
         toast.add_css_class("warning")
         self.grid.attach(toast, 1, 6, 2, 1)
 
-    def get_sources(self):        
-        self.lst_source_streams.remove_all()
-        from Models.TemplateDataModel import TemplateDataModel
-
-        for source_path in self.source_paths:
-            file_title = get_file_title(source_path)
-            try:
-                media_info = self.app.parsers['media'].get_info(source_path)
-                if "error" in media_info: raise Exception(media_info["error"])
-
-                fmt = media_info.get('format', {})
-                duration_str = seconds_to_time(float(fmt.get('duration', 0)))
-
-                self.lst_source_streams.append(self._create_file_header(file_title, duration_str))
-
-                for stm_idx, stream in enumerate(media_info.get('streams', [])):
-                    stype = stream.get('codec_type', 'unknown')
-                    key = (source_path, stm_idx)
-                    
-                    # IMPORTANT: We must work with a copy or ensure we update the reference
-                    cached = self.selected_streams.get(key, {})
-                    
-                    tpl_name = cached.get("template", "")
-                    # Extract the settings, defaulting to an empty dict if missing
-                    trans_settings = cached.get("transcoding_settings", {})
-
-                    # FIXED: More robust check for null/None/empty codec
-                    # Your YAML has 'codec: null', so trans_settings.get("codec") is None
-                    is_empty = not trans_settings or trans_settings.get("codec") is None
-                    
-                    if tpl_name and (not trans_settings or trans_settings.get("codec") is None):
-                        # PROACTIVE REPAIR: Fetch the actual template data
-                        tpl_obj = TemplateDataModel.get_template_by_name(self.app, tpl_name)
-                        if tpl_obj:
-                            raw_params = tpl_obj.get("parameters", {})
-                            flat_params = raw_params.get("options", raw_params) if isinstance(raw_params, dict) else {}
-                            
-                            trans_settings = {
-                                "codec": tpl_obj.get("codec") or "copy",
-                                "parameters": flat_params,
-                                "filters": tpl_obj.get("filters", {"mode": "simple", "entries": []})
-                            }
-                            # Update the cache so it persists back to the YAML on save
-                            cached["transcoding_settings"] = trans_settings
-
-                    # If NO template is assigned and codec is still null, default to "copy"
-                    if not trans_settings or trans_settings.get("codec") is None:
-                        print(f"WARNING: TEMPLATE {tpl_name} COULD NOT BE LOADED!")
-                        trans_settings = {
-                            "codec": "copy",
-                            "parameters": {},
-                            "filters": {"mode": "simple", "entries": []}
-                        }
-
-                    stream_bundle = {
-                        "path": source_path,
-                        "index": stm_idx,
-                        "type": stype,
-                        "description": self.get_stream_description(stream),
-                        "duration": stream.get("duration", "0"),
-                        "active": cached.get("active", stype in ['video', 'audio']),
-                        "template": tpl_name,
-                        "transcoding_settings": trans_settings, # Now contains the repaired data
-                        "metadata": cached.get("metadata", {}),
-                        "disposition": cached.get("disposition", []),
-                        "language": cached.get("language", stream.get("tags", {}).get("language", "")),
-                        "trim_start": cached.get("trim_start", ""),
-                        "trim_length": cached.get("trim_length", ""),
-                        "trim_end": cached.get("trim_end", ""),
-                        "stream_delay": cached.get("stream_delay", "0")
-                    }
-
-                    row = SourceStreamRow(self, stream_bundle)
-                    self.lst_source_streams.append(row)
-
-            except Exception as e:
-                self._add_error_row(file_title, e)
-
     def show_error_dialog(self, msg):
         dialog = Gtk.AlertDialog(message="Validation Error", detail=msg)
         dialog.show(self)
@@ -451,8 +375,25 @@ class JobSetupWindow(Gtk.ApplicationWindow):
             count += 1
         return None
     
+    def _update_streams_cache(self):
+        """Captures the live state from the UI rows into the selected_streams cache."""
+        curr = self.lst_source_streams.get_first_child()
+        while curr:
+            if isinstance(curr, SourceStreamRow):
+                # Pull the current configuration from the widget
+                config = curr.get_stream_config()
+                # Use the path and index as the key so state is tied to the stream, 
+                # not the position in the list.
+                key = (curr.source_path, curr.stream_index)
+                self.selected_streams[key] = config
+            curr = curr.get_next_sibling()
+    
     def get_sources(self):
 
+        # Save the live state of all current rows into the cache
+        self._update_streams_cache()
+
+        # Now clear the list for rebuilding
         self.lst_source_streams.remove_all()
 
         for source_path in self.source_paths:
@@ -478,6 +419,26 @@ class JobSetupWindow(Gtk.ApplicationWindow):
                     # We only look at cached data for the INITIAL bundle
                     cached = self.selected_streams.get(key, {})
 
+                    template_name = cached.get("template", "")
+                    transcoding_settings = cached.get("transcoding_settings", {})
+
+                    if not cached:
+                        # Determine the target template name, e.g., "Copy Video"
+                        target_tpl_name = f"Copy {stype.capitalize()}"
+                        tpl_obj = TemplateDataModel.get_template_by_name(self.app, target_tpl_name)
+                        
+                        if tpl_obj:
+                            template_name = target_tpl_name
+                            # Pre-populate the bundle with the template's actual settings
+                            transcoding_settings = {
+                                "codec": tpl_obj.get("codec", "copy"),
+                                "parameters": tpl_obj.get("parameters", {}).get("options", {}),
+                                "filters": tpl_obj.get("filters", {"mode": "simple", "entries": []})
+                            }
+                        else:
+                            # Fallback if the "Copy" template doesn't exist in the library
+                            transcoding_settings = {"codec": "copy"}
+
                     stream_bundle = {
                         "path": source_path,
                         "index": stm_idx,
@@ -485,8 +446,8 @@ class JobSetupWindow(Gtk.ApplicationWindow):
                         "description": self.get_stream_description(stream),
                         "duration": stream.get("duration") or file_duration or "0",
                         "active": cached.get("active", stype in ['video', 'audio']),
-                        "template": cached.get("template", ""),
-                        "transcoding_settings": cached.get("transcoding_settings", {}),
+                        "template": template_name,
+                        "transcoding_settings": transcoding_settings,
                         "metadata": cached.get("metadata", {}),
                         "disposition": cached.get("disposition", []),
                         "language": cached.get("language", ""),
@@ -685,6 +646,7 @@ class JobSetupWindow(Gtk.ApplicationWindow):
         hbox.append(Gtk.Label(label=duration, xalign=1))
         row = Gtk.ListBoxRow(selectable=False)
         row.set_child(hbox)
+        GLib.idle_add(self.do_scroll_to_row, row)
         return row
 
     def on_save_job_clicked(self, _):

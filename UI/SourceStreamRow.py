@@ -2,6 +2,7 @@ import gi
 from UI.Builder import Builder
 gi.require_version("Gdk", "4.0")
 from gi.repository import Gtk, Pango
+from Models.TemplateDataModel import TemplateDataModel
 from UI.MetadataManagerWindow import MetadataManagerWindow
 from UI.FlagsPickerWindow import FlagsPickerWindow
 from UI.LanguagePickerWindow import LanguagePickerWindow
@@ -176,12 +177,34 @@ class SourceStreamRow(Gtk.ListBoxRow):
         return self.dispositions
 
     def refresh_template_ui(self):
-        if self.current_template:
-            self.ent_tpl.set_text(self.current_template)
-            self.ent_tpl.remove_css_class("warning")
-        else:
+        """Validates the template against the library and updates UI state."""
+        
+        # Case 1: Manual Mode (No template name)
+        if not self.current_template:
             self.ent_tpl.set_text("Manual / Custom Settings")
             self.ent_tpl.add_css_class("warning")
+            self.ent_tpl.set_tooltip_text("No template selected. Using custom stream settings.")
+            return
+
+        # Case 2: Template name exists - Verify it's actually in the library
+        self.ent_tpl.set_text(self.current_template)
+        
+        # Check if the template exists in the app's global template list
+        template_obj = TemplateDataModel.get_template_by_name(
+            self.parent_window.app, 
+            self.current_template
+        )
+
+        if template_obj:
+            # Template found: Clear warning
+            self.ent_tpl.remove_css_class("warning")
+            self.ent_tpl.set_tooltip_text(f"Using template: {self.current_template}")
+        else:
+            # Template missing: Apply warning
+            self.ent_tpl.add_css_class("warning")
+            self.ent_tpl.set_tooltip_text(
+                f"Warning: Template '{self.current_template}' was not found in your library!"
+            )
 
     def on_trim_time_changed(self, _):
         if self._is_calculating: return
