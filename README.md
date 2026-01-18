@@ -24,7 +24,7 @@ A powerful, template-driven GTK4 frontend for FFmpeg, designed for transcoding m
 * **Python 3.10+**
 * **GTK4** & **PyGObject**
 * **FFmpeg** (installed and accessible in your PATH OR set up the location in the settings)
-🔮
+
 NOTICE: The first start may take a while as the application does an introspection of the FFMPEG capabilities.
 In a later version, this will run a lot faster.
 
