@@ -366,7 +366,7 @@ class TemplateEditorWindow(Gtk.ApplicationWindow):
 
         def is_parameter_allowed(param):
             ctx = param.get("context", {})
-            is_av_opt = param.get('group_name') == "av_options"
+            is_av_opt = param.get('group_name') in ["av_options", "global_per_stream"]
             
             return (
                 (stream_type == "video" and ctx.get("video")) or

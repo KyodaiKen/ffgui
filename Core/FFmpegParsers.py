@@ -1,7 +1,6 @@
 from abc import ABC, abstractmethod
 from datetime import timedelta
 from fractions import Fraction
-import platform
 import subprocess
 import sys
 import struct
@@ -223,94 +222,131 @@ class FFmpegGlobalsParser(FFmpegBaseParser):
     def __init__(self, ffmpeg_path="ffmpeg", disk_cache_file="cache.json", **kwargs):
         super().__init__(ffmpeg_path, disk_cache_file, **kwargs)
         self._full_help_output = None
+        # Only the sections explicitly requested
         self._header_to_section = {
+            "Advanced per-stream options": "global_per_stream",
             "Video options": "video",
             "Advanced Video options": "video",
             "Audio options": "audio",
             "Advanced Audio options": "audio",
             "Subtitle options": "subtitle",
-            "Advanced Subtitle options": "subtitle"
+            "Advanced Subtitle options": "subtitle",
+            "AVCodecContext AVOptions": "av_options"
         }
 
     def parse_list(self):
-        return [{"name": "video"}, {"name": "audio"}, {"name": "subtitle"}, {"name": "av_options"}]
+        # Included global_per_stream so the "Advanced per-stream options" have a destination
+        return [
+            {"name": "video"}, 
+            {"name": "audio"}, 
+            {"name": "subtitle"}, 
+            {"name": "av_options"},
+            {"name": "global_per_stream"}
+        ]
 
-    def _determine_target_sections(self, current_section, flags):
-        """Returns a list of all applicable sections for a given parameter."""
-        # If we are in a specific header (e.g., 'Video options'), keep it pinned
-        if current_section != "av_options":
-            return [current_section]
+    def _determine_target_sections(self, current_header_key, flags):
+        """Determines which internal sections a parameter belongs to."""
+        if not current_header_key:
+            return []
+            
+        targets = [current_header_key]
 
-        targets = []
-        if "V" in flags: targets.append("video")
-        if "A" in flags: targets.append("audio")
-        if "S" in flags: targets.append("subtitle")
+        # Simplified: Removed the global_per_stream -> all-media-types routing.
+        # AVOptions still map to media types based on flags (V/A/S)
+        if current_header_key == "av_options":
+            if "V" in flags: targets.append("video")
+            if "A" in flags: targets.append("audio")
+            if "S" in flags: targets.append("subtitle")
+        
+        return list(set(targets))
 
-        # If no specific media flags are found, default to general av_options
-        return targets if targets else ["av_options"]
+    def _clean_descr_fixed(self, raw_descr):
+        """Extracts metadata and cleans description text."""
+        min_v = self._to_num(re.search(r"from (.*?) to", raw_descr).group(1)) if re.search(r"from (.*?) to", raw_descr) else None
+        max_v = self._to_num(re.search(r"to (.*?)(?:\)|,|$)", raw_descr).group(1)) if re.search(r"to (.*?)(?:\)|,|$)", raw_descr) else None
+        def_v = self._to_num(re.search(r"default (.*?)(?:\)|$)", raw_descr).group(1)) if re.search(r"default (.*?)(?:\)|$)", raw_descr) else None
+
+        clean = re.sub(r"\(from.*?to.*?\)", "", raw_descr)
+        clean = re.sub(r"\(default.*?\)", "", clean)
+        clean = re.sub(r"\(\s*\)", "", clean)
+        clean = re.sub(r"^[A-Z\.]{5,}\s+", "", clean) 
+        
+        return {
+            "clean_descr": clean.strip(),
+            "min": min_v,
+            "max": max_v,
+            "default": def_v
+        }
 
     def parse_details(self, section_name):
         if not self._full_help_output:
             self._full_help_output = self._run_cmd(["-h", "full"])
 
         params = []
-        av_pattern = re.compile(r"^\s{1,4}-([\w:-]+)\s+<([^>]+)>\s+([EDVASFTR\.]{5,})\s*(.*)$")
-        std_pattern = re.compile(r"^\s{1,4}-([\w:-]+)\s+([\w\s]+?)\s{2,}(.*)$")
-        
-        # Updated for Global Options to match the BaseParser's improved flexibility
-        opt_pattern = re.compile(r"^\s{3,20}([\w_-]+)\s+([-?\w\.]+)\s+([EDVASFTR\.]{5,})\s*(.*)$")
+        av_pattern = re.compile(r"^\s*-?([\w:\[\]<>+-]+)\s+<([^>]+)>\s+([\.EDVASBTRFP]{5,})\s*(.*)$")
+        std_pattern = re.compile(r"^\s*-([\w:\[\]<>+-]+)(?:\s+(<[^>]*>))?\s+(.*)$")
+        opt_pattern = re.compile(r"^\s{5,20}([\w_-]+)(?:\s+([-?\w\.]+))?\s+([\.EDVASBTRFP]{5,})\s*(.*)$")
 
-        current_header_section = None
+        current_header_key = None
         last_param = None
 
         for line in self._full_help_output.splitlines():
-            if not line.strip(): continue
+            if not line.strip():
+                continue
 
-            # Section Header Detection
+            # Header Detection
             if line.endswith(":") or "AVOptions" in line:
                 header = line.strip().rstrip(":")
-                current_header_section = self._header_to_section.get(header, "av_options")
-                last_param = None
+                current_header_key = self._header_to_section.get(header)
+                last_param = None 
                 continue
 
-            # Parameter Parsing
-            av_match = av_pattern.match(line)
-            std_match = std_pattern.match(line)
-
-            if av_match:
-                name, p_type, flags, raw_descr = av_match.groups()
-                if section_name in self._determine_target_sections(current_header_section, flags):
-                    parsed = self._clean_descr(raw_descr)
-                    last_param = self._create_param_dict(name, p_type, flags, parsed, section_name)
-                    params.append(last_param)
-                else:
-                    last_param = None
-                continue
-            
-            if std_match:
-                name, p_type, descr = std_match.groups()
-                if current_header_section == section_name:
-                    parsed = {"clean_descr": descr.strip(), "min": None, "max": None, "default": None}
-                    last_param = self._create_param_dict(name, p_type, ".....", parsed, section_name)
-                    params.append(last_param)
-                else:
-                    last_param = None
+            if not current_header_key:
                 continue
 
-            # Choice/Option Parsing for Globals
-            opt_match = opt_pattern.match(line)
-            if opt_match and last_param:
-                if not line.strip().startswith("-"):
+            if current_header_key == "av_options":
+                av_match = av_pattern.match(line)
+                if av_match:
+                    name, p_type, flags, raw_descr = av_match.groups()
+                    # CLEAN NAME: Remove stream specifiers like [:<stream_spec>]
+                    name = re.sub(r'\[.*\]', '', name)
+                    
+                    targets = self._determine_target_sections(current_header_key, flags)
+                    if section_name in targets:
+                        parsed = self._clean_descr_fixed(raw_descr)
+                        last_param = self._create_param_dict(name, p_type, flags, parsed, section_name)
+                        params.append(last_param)
+                    else:
+                        last_param = None
+                    continue
+
+                # Nested choices for AVOptions
+                opt_match = opt_pattern.match(line)
+                if opt_match and last_param:
                     o_name, o_val, o_flags, o_descr = opt_match.groups()
+                    final_val = self._to_num(o_val) if o_val else o_name
                     last_param["options"].append({
-                        "name": o_name,
-                        "value": self._to_num(o_val),
-                        "descr": o_descr.strip(),
-                        "context": self._map_flags(o_flags)
+                        "name": o_name, "value": final_val, "descr": o_descr.strip(), "context": self._map_flags(o_flags)
                     })
+            else:
+                # Standard / Global Per-Stream Sections
+                std_match = std_pattern.match(line)
+                if std_match:
+                    name, p_type, descr = std_match.groups()
+                    # CLEAN NAME: Remove stream specifiers like [:<stream_spec>]
+                    name = re.sub(r'\[.*\]', '', name)
+                    
+                    p_type = p_type.strip("<>") if p_type else ""
+                    targets = self._determine_target_sections(current_header_key, "")
+                    
+                    if section_name in targets:
+                        parsed = {"clean_descr": descr.strip(), "min": None, "max": None, "default": None}
+                        last_param = self._create_param_dict(name, p_type, ".....", parsed, section_name)
+                        params.append(last_param)
+                    else:
+                        last_param = None
 
         return {"parameters": params}
-
 class FFmpegFilterParser(FFmpegBaseParser):
     def __init__(self, ffmpeg_path="ffmpeg", disk_cache_file="ffmpeg_cache.json"):
         super().__init__(ffmpeg_path, disk_cache_file)
