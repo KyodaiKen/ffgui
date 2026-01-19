@@ -113,6 +113,7 @@ class TemplateManagerWindow(Gtk.ApplicationWindow):
 
         # 5. Buttons
         btn_edit = Gtk.Button(icon_name="document-edit-symbolic")
+        btn_edit.props.margin_end = 16
         btn_edit.connect("clicked", lambda *_: self.on_edit_clicked(t))
         row_box.append(btn_edit)
 

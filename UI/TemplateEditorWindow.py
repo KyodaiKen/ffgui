@@ -714,15 +714,23 @@ class TemplateEditorWindow(Gtk.ApplicationWindow):
             }
         else:
             # Persistent template mode: save the name and type as well
+            template_name = self.entry_name.get_text().strip()
             data = copy.deepcopy(self.template)
             data.update({
-                "name": self.entry_name.get_text(),
+                "name": template_name,
                 "type": self.get_selected_type(),
                 "codec": self.selected_codec,
                 # Store with 'options' wrapper for file-based consistency
                 "parameters": {"options": current_options},
                 "filters": current_filters
             })
+
+            try:
+                # We pass the name entry text as the filename
+                TemplateDataModel.save_template(self.app.templates_dir, template_name, data)
+            except Exception as e:
+                self.show_error_dialog(f"Failed to save template file: {str(e)}")
+                return
 
         if self.on_save_callback:
             self.on_save_callback(data)
