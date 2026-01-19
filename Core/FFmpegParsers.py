@@ -1,3 +1,4 @@
+from Core.Utils import seconds_to_time, get_file_title
 from abc import ABC, abstractmethod
 from datetime import timedelta
 from fractions import Fraction
@@ -7,6 +8,8 @@ import struct
 import re
 import os
 import json
+
+from Models.TemplateDataModel import TemplateDataModel
 
 class FFmpegBaseParser(ABC):
     # Mapping FFmpeg/C constants to Python numbers
@@ -744,7 +747,111 @@ class FFmpegMediaInfoParser:
 
         return data
 
+class FFmpegMediaInfo:
+    @staticmethod
+    def _get_stream_description(stream):
+        """Generates description with decimal FPS and kbps bitrate."""
+        meta = stream.get('metadata', {})
+        title = meta.get('title') or meta.get('NAME') or ""
 
+        # Consistent bitrate labeling
+        bitrate_val = stream.get('bit_rate')
+        bitrate_str = f", ~{int(bitrate_val) // 1000} kbps" if bitrate_val else ""
+
+        title_prefix = f"{title} " if title else ""
+        codec_long = stream.get('codec_long_name', 'Unknown Codec')
+        codec_type = stream.get('codec_type', 'unknown')
+
+        if codec_type == 'video':
+            fps_frac = stream.get('frac_avg_frame_rate')
+            fps_display = "0"
+            if fps_frac:
+                fps_decimal = float(fps_frac)
+                fps_display = f"{fps_decimal:.3f}".rstrip('0').rstrip('.')
+                if fps_frac.denominator != 1:
+                    fps_display += f" ({fps_frac.numerator}/{fps_frac.denominator})"
+
+            width = stream.get('width', '?')
+            height = stream.get('height', '?')
+            pix_fmt = stream.get('pix_fmt', 'unknown')
+            return f"{title_prefix}(Video) {codec_long}, {width}x{height}, {pix_fmt}, {fps_display} FPS{bitrate_str}"
+
+        elif codec_type == 'audio':
+            sr = stream.get('sample_rate', '?')
+            ch = f"{stream.get('channels', '?')}ch"
+            return f"{title_prefix}(Audio) {codec_long}, {ch}, {sr} Hz{bitrate_str}"
+
+        return f"{title_prefix}({codec_type}): {codec_long}{bitrate_str}"
+
+    @staticmethod
+    def get_all_media_sources(source_paths, app, selected_streams, title_duration_callback, on_done_probing, on_error):
+        for source_path in source_paths:
+            file_title = get_file_title(source_path)
+            try:
+                media_info = app.parsers['media'].get_info(source_path)
+                if "error" in media_info: raise Exception(media_info["error"])
+
+                fmt = media_info.get('format', {})
+
+                # Capture the global file duration as a fallback
+                file_duration = float(fmt.get('duration', 0))
+                duration_str = seconds_to_time(file_duration)
+
+                # File Header
+                if title_duration_callback:
+                    title_duration_callback(file_title, duration_str)
+
+                for stm_idx, stream in enumerate(media_info.get('streams', [])):
+                    stype = stream.get('codec_type', 'unknown')
+                    key = (source_path, stm_idx)
+                    
+                    cached = selected_streams.get(key, {})
+                    template_name = cached.get("template", "")
+                    transcoding_settings = cached.get("transcoding_settings", {})
+
+                    if not cached:
+                        # Determine the target template name, e.g., "Copy Video"
+                        target_tpl_name = f"Copy {stype.capitalize()}"
+                        tpl_obj = TemplateDataModel.get_template_by_name(app, target_tpl_name)
+                        
+                        if tpl_obj:
+                            template_name = target_tpl_name
+                            # Pre-populate the bundle with the template's actual settings
+                            transcoding_settings = {
+                                "codec": tpl_obj.get("codec", "copy"),
+                                "parameters": tpl_obj.get("parameters", {}).get("options", {}),
+                                "filters": tpl_obj.get("filters", {"mode": "simple", "entries": []})
+                            }
+                        else:
+                            # Fallback if the "Copy" template doesn't exist in the library
+                            transcoding_settings = {"codec": "copy"}
+
+                    stream_bundle = {
+                        "path": source_path,
+                        "index": stm_idx,
+                        "type": stype,
+                        "description": FFmpegMediaInfo._get_stream_description(stream),
+                        "duration": stream.get("duration") or file_duration or "0",
+                        "active": cached.get("active", stype in ['video', 'audio']),
+                        "template": template_name,
+                        "transcoding_settings": transcoding_settings,
+                        "metadata": cached.get("metadata", {}),
+                        "disposition": cached.get("disposition", []),
+                        "language": cached.get("language", ""),
+                        "trim_start": cached.get("trim_start", ""),
+                        "trim_length": cached.get("trim_length", ""),
+                        "trim_end": cached.get("trim_end", ""),
+                        "stream_delay": cached.get("stream_delay", "0")
+                    }
+
+                    if on_done_probing:
+                        on_done_probing(stream_bundle)
+            except Exception as e:
+                if on_error:
+                    on_error(file_title, e)
+                    #self._add_error_row(file_title, e)
+                else:
+                    print(e)
 
 if __name__ == "__main__":
     # Create cache folder if it doesn't exist

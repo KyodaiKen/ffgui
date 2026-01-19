@@ -2,6 +2,10 @@ import yaml
 import pathlib
 from Models.TemplateDataModel import TemplateDataModel
 
+class NoAliasDumper(yaml.SafeDumper):
+    def ignore_aliases(self, data):
+        return True
+
 class JobsDataModel:
     @staticmethod
     def create_empty_job():
@@ -93,7 +97,7 @@ class JobsDataModel:
         try:
             with open(path, 'w') as f:
                 # Use sort_keys=False to keep the structure readable and maintain order
-                yaml.dump(data, f, sort_keys=False, indent=4, default_flow_style=False)
+                yaml.dump(data, f, Dumper=NoAliasDumper, sort_keys=False, indent=4, default_flow_style=False)
             return True
         except Exception as e:
             print(f"Error saving file: {e}")

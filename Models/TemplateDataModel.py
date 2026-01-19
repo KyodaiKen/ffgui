@@ -2,6 +2,10 @@ import pathlib
 import yaml
 import os
 
+class NoAliasDumper(yaml.SafeDumper):
+    def ignore_aliases(self, data):
+        return True
+
 class TemplateDataModel:
     @staticmethod
     def get_template_by_name(app, template_name):
@@ -112,7 +116,7 @@ class TemplateDataModel:
         save_path = base_dir / f"{filename}.yaml"
         
         with open(save_path, 'w') as f:
-            yaml.dump(clean_data, f, sort_keys=False, indent=4)
+            yaml.dump(clean_data, f, Dumper=NoAliasDumper, sort_keys=False, indent=4, default_flow_style=False)
         return str(save_path.resolve())
 
     @staticmethod

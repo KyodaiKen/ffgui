@@ -10,6 +10,8 @@ from UI.JobRow import JobRow
 from UI.JobSetupWindow import JobSetupWindow
 from UI.TemplateManagerWindow import TemplateManagerWindow
 from UI.Constants import MENU_XML
+from Models.JobsDataModel import JobsDataModel
+from Core.FFmpegParsers import FFmpegMediaInfo
 from Core.JobRunner import JobRunner, JobStatus
 
 class MainWindow(Gtk.ApplicationWindow):
@@ -340,58 +342,30 @@ class MainWindow(Gtk.ApplicationWindow):
 
     def _get_job_data_from_file(self, file_path):
         """Probes a file and returns a Job dictionary. Returns None if probe fails."""
-        from Models.JobsDataModel import JobsDataModel
-        from Core.Utils import get_file_title
-        
-        try:
-            # If this fails, it's not a supported media file
-            info = self.app.parsers['media'].get_info(file_path)
-            if not info or "streams" not in info:
-                return None
 
-            job = JobsDataModel.create_empty_job()
-            job["name"] = get_file_title(file_path)
-            job["sources"]["files"] = [file_path]
-            job["output"]["directory"] = os.path.dirname(file_path)
-            job["output"]["filename"] = "" 
-            job["output"]["container"] = "auto"
+        job = JobsDataModel.create_empty_job()
+        job["sources"]["files"] = [file_path]
+        job["output"]["directory"] = os.path.dirname(file_path)
+        job["output"]["filename"] = "" 
+        job["output"]["container"] = "auto"
 
-            # Parse duration tag
+        def _get_title(file_title, _):
+            job["name"] = file_title
+
+        def _return_job(stream_bundle):
+            stream_bundle["file"] = 0
+            job["sources"]["streams"].append(stream_bundle)
             try:
-                # Filter for streams that have a duration and find the max
-                durations = [float(s.get('duration', 0)) for s in info.get('streams', [])]
-                # Fallback to format duration if stream duration is missing
-                if not durations or max(durations) == 0:
-                    durations = [float(info.get('format', {}).get('duration', 0))]
-                
-                # Convert to microseconds for the Runner
-                stream_duration = int(max(durations) * 1000000)
-            except Exception as e:
-                print(f"Error probing duration for {file_path}: {e}")
-                stream_duration = 0
-            
-            for idx, stream in enumerate(info.get('streams', [])):
-                stype = stream.get('codec_type', 'data').lower() # Ensure lowercase
+                job["total_duration"] = float(stream_bundle.get("duration", 0))
+            except:
+                pass
+        
+        def _on_error(file_title, e):
+            print(f"FFMPEG could not probe {file_title}: {e}")
+            job = None
 
-                # Get the raw dict: {"default": 1, "forced": 0, ...}
-                disposition_dict = stream.get('disposition', {})
-                # Convert to list: ['default']
-                active_dispositions = [k for k, v in disposition_dict.items() if v == 1]
-                
-                job["sources"]["streams"].append({
-                    "file": 0, 
-                    "index": idx,
-                    "type": stype, # This MUST exist for the toggle to find it
-                    "active": stype in ['video', 'audio'],
-                    "template": f"Copy {stype.capitalize()}",
-                    "disposition": active_dispositions,
-                    "language": stream.get('tags', {}).get('language', ''),
-                    "duration": stream_duration
-                })
-            return job
-        except Exception as e:
-            print(f"FFMPEG could not probe {file_path}: {e}")
-            return None
+        FFmpegMediaInfo.get_all_media_sources([file_path], self.app, {}, _get_title, _return_job, _on_error)
+        return job
 
     def _create_job_from_single_file(self, file_path):
         """Generates a job with your specific defaults."""

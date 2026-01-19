@@ -107,6 +107,10 @@ CONTEXT_MENU_XML = """
             </item>
         </submenu>
         <item>
+            <attribute name='label'>Batch Apply Container Format And Parameters...</attribute>
+            <attribute name='action'>context.batch_container</attribute>
+        </item>
+        <item>
             <attribute name='label'>Batch Change Output Directory...</attribute>
             <attribute name='action'>context.batch_chg_out_dir</attribute>
         </item>

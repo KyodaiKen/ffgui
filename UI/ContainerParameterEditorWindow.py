@@ -15,7 +15,10 @@ class ContainerParameterEditorWindow(Gtk.ApplicationWindow):
         self.on_save_callback = on_save_callback
         
         # Get the currently selected container name (e.g., 'mkv', 'mp4')
-        self.container_name = parent_window.selected_container
+        if hasattr(parent_window, "selected_container"):
+            self.container_name = parent_window.selected_container
+        else:
+            self.container_name = ""
 
         self.set_default_size(500, 400)
         self.set_transient_for(parent_window)

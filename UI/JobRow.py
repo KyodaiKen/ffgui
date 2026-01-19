@@ -1,11 +1,13 @@
 import gi
-
-from UI.BatchOutputDirWindow import BatchOutputDirWindow
 gi.require_version("Gdk", "4.0")
 from gi.repository import Gtk, Gio, Gdk
+from Models.TemplateDataModel import TemplateDataModel
 from UI.JobSetupWindow import JobSetupWindow
 from UI.TemplateManagerWindow import TemplateManagerWindow
 from UI.Constants import CONTEXT_MENU_XML
+from UI.BatchOutputDirWindow import BatchOutputDirWindow
+from UI.ContainerParameterEditorWindow import ContainerParameterEditorWindow
+from UI.SinglePickerWindow import SinglePickerWindow
 
 class JobRow(Gtk.ListBoxRow):
     def __init__(self, job_id, job_data, _, app):
@@ -72,6 +74,7 @@ class JobRow(Gtk.ListBoxRow):
         add_act("batch_tpl_video", lambda a, p: self.on_batch_template("video"))
         add_act("batch_tpl_audio", lambda a, p: self.on_batch_template("audio"))
         add_act("batch_tpl_subtitle", lambda a, p: self.on_batch_template("subtitles"))
+        add_act("batch_container", self.on_batch_container_click)
         add_act("batch_chg_out_dir", self.on_batch_chg_output_dir)
         
         self.insert_action_group("context", self.action_group)
@@ -205,6 +208,19 @@ class JobRow(Gtk.ListBoxRow):
         listbox = self.get_parent()
         selected_rows = [row for row in listbox.get_selected_rows() if isinstance(row, JobRow)]
 
+        # Fetch the actual template definition once
+        tpl_obj = TemplateDataModel.get_template_by_name(self.app, template_name)
+        if not tpl_obj:
+            print(f"Error: Template '{template_name}' not found.")
+            return
+
+        # Prepare the settings bundle to inject
+        new_settings = {
+            "codec": tpl_obj.get("codec", "copy"),
+            "parameters": tpl_obj.get("parameters", {}).get("options", {}),
+            "filters": tpl_obj.get("filters", {"mode": "simple", "entries": []})
+        }
+
         for row in selected_rows:
             streams = row.job_data["sources"]["streams"]
             
@@ -212,6 +228,7 @@ class JobRow(Gtk.ListBoxRow):
                 # We check the 'type' which was saved during the initial probe/import
                 if s_entry.get("type") == target_type:
                     s_entry["template"] = template_name
+                    s_entry["transcoding_settings"] = new_settings.copy()
             
             # Refresh UI (This is now instant)
             row.update_job_data(row.job_data)
@@ -329,3 +346,51 @@ class JobRow(Gtk.ListBoxRow):
             selected_jobs=selected_job_data
         )
         batch_win.present()
+
+    def on_batch_container_click(self, action, param):
+        """Step 1: Open the Format Picker (SinglePickerWindow)"""
+        listbox = self.get_parent()
+        self._selected_batch_rows = [row for row in listbox.get_selected_rows() if isinstance(row, JobRow)]
+        
+        if not self._selected_batch_rows:
+            return
+
+        # Fetch formats from the app's ffmpeg data
+        formats = getattr(self.app, 'ffmpeg_data', {}).get('formats', [])
+        def _is_valid(_):
+            return True
+        
+        picker = SinglePickerWindow(
+            parent_window=self.get_root(),
+            options=formats,
+            strings={"title": "Select container format", "placeholder_text": "Search for container formats..."},
+            item_filter=_is_valid,
+            on_select=self._on_batch_format_selected
+        )
+        picker.present()
+
+    def _on_batch_format_selected(self, selected_format):
+        """Step 2: Open the Parameter Editor (ContainerParameterEditorWindow)"""
+        self._batch_new_format = selected_format.get("name", "")
+
+        editor = ContainerParameterEditorWindow(
+            parent_window=self.get_root(),
+            job_data=self.job_data,
+            on_save_callback=self._apply_batch_container_settings
+        )
+        editor.present()
+
+    def _apply_batch_container_settings(self, new_params):
+        """Step 3: Apply both format and parameters to all selected jobs"""
+        print(self._batch_new_format)
+        for row in self._selected_batch_rows:
+            # Update the underlying job data
+            row.job_data["output"]["container"] = self._batch_new_format
+            row.job_data["output"]["container_parameters"] = new_params
+            
+            # Update the UI (if you display the extension in the labels)
+            row.update_job_data(row.job_data)
+        
+        # Cleanup ephemeral state
+        self._selected_batch_rows = None
+        self._batch_new_format = None

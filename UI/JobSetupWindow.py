@@ -1,6 +1,5 @@
 import gi
 
-from Models.TemplateDataModel import TemplateDataModel
 gi.require_version("Gdk", "4.0")
 from gi.repository import GLib, Gtk, Gio, Gdk, Pango
 from UI.SourceStreamRow import SourceStreamRow
@@ -8,7 +7,9 @@ from UI.SinglePickerWindow import SinglePickerWindow
 from UI.MetadataManagerWindow import MetadataManagerWindow
 from UI.ContainerParameterEditorWindow import ContainerParameterEditorWindow
 from Models.JobsDataModel import JobsDataModel
+from Models.TemplateDataModel import TemplateDataModel
 from Core.Utils import seconds_to_time, get_file_title
+from Core.FFmpegParsers import FFmpegMediaInfo
 
 class JobSetupWindow(Gtk.ApplicationWindow):
     def __init__(self, parent_window, mode="create", job=None, **kwargs):
@@ -330,40 +331,6 @@ class JobSetupWindow(Gtk.ApplicationWindow):
     def save_global_meta(self, meta):
         self.global_metadata = meta
 
-    def get_stream_description(self, stream):
-        """Generates description with decimal FPS and kbps bitrate."""
-        meta = stream.get('metadata', {})
-        title = meta.get('title') or meta.get('NAME') or ""
-
-        # Consistent bitrate labeling
-        bitrate_val = stream.get('bit_rate')
-        bitrate_str = f", ~{int(bitrate_val) // 1000} kbps" if bitrate_val else ""
-
-        title_prefix = f"{title} " if title else ""
-        codec_long = stream.get('codec_long_name', 'Unknown Codec')
-        codec_type = stream.get('codec_type', 'unknown')
-
-        if codec_type == 'video':
-            fps_frac = stream.get('frac_avg_frame_rate')
-            fps_display = "0"
-            if fps_frac:
-                fps_decimal = float(fps_frac)
-                fps_display = f"{fps_decimal:.3f}".rstrip('0').rstrip('.')
-                if fps_frac.denominator != 1:
-                    fps_display += f" ({fps_frac.numerator}/{fps_frac.denominator})"
-
-            width = stream.get('width', '?')
-            height = stream.get('height', '?')
-            pix_fmt = stream.get('pix_fmt', 'unknown')
-            return f"{title_prefix}(Video) {codec_long}, {width}x{height}, {pix_fmt}, {fps_display} FPS{bitrate_str}"
-
-        elif codec_type == 'audio':
-            sr = stream.get('sample_rate', '?')
-            ch = f"{stream.get('channels', '?')}ch"
-            return f"{title_prefix}(Audio) {codec_long}, {ch}, {sr} Hz{bitrate_str}"
-
-        return f"{title_prefix}({codec_type}): {codec_long}{bitrate_str}"
-
     def get_row_at_index(self, index):
         """Safely retrieves the ListBoxRow at a specific index"""
         count = 0
@@ -388,80 +355,34 @@ class JobSetupWindow(Gtk.ApplicationWindow):
                 self.selected_streams[key] = config
             curr = curr.get_next_sibling()
     
-    def get_sources(self):
+    def create_file_header(self, title, duration):
+        hbox = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=12)
+        hbox.set_margin_top(6)
+        hbox.set_margin_bottom(2)
+        hbox.set_margin_end(24)
+        lbl = Gtk.Label(label=f"<big><b>{title}</b></big>", use_markup=True, xalign=0, hexpand=True)
+        hbox.append(lbl)
+        hbox.append(Gtk.Label(label=duration, xalign=1))
+        row = Gtk.ListBoxRow(selectable=False)
+        row.set_child(hbox)
+        GLib.idle_add(self.do_scroll_to_row, row)
+        self.lst_source_streams.append(row)
 
+    def create_stream_row(self, stream_bundle):
+        self.lst_source_streams.append(SourceStreamRow(self, stream_bundle))
+
+    def create_error_row(self, file_title, e):
+        error_row = Gtk.ListBoxRow(selectable=False)
+        error_row.set_child(Gtk.Label(label=f"Error parsing {file_title}: {e}", xalign=0))
+        self.lst_source_streams.append(error_row)
+
+    def get_sources(self):
         # Save the live state of all current rows into the cache
         self._update_streams_cache()
-
         # Now clear the list for rebuilding
         self.lst_source_streams.remove_all()
-
-        for source_path in self.source_paths:
-            file_title = get_file_title(source_path)
-            try:
-                media_info = self.app.parsers['media'].get_info(source_path)
-                if "error" in media_info: raise Exception(media_info["error"])
-
-                fmt = media_info.get('format', {})
-
-                # Capture the global file duration as a fallback
-                file_duration = float(fmt.get('duration', 0))
-                duration_str = seconds_to_time(file_duration)
-
-                # File Header
-                header_row = self._create_file_header(file_title, duration_str)
-                self.lst_source_streams.append(header_row)
-
-                for stm_idx, stream in enumerate(media_info.get('streams', [])):
-                    stype = stream.get('codec_type', 'unknown')
-                    key = (source_path, stm_idx)
-                    
-                    # We only look at cached data for the INITIAL bundle
-                    cached = self.selected_streams.get(key, {})
-
-                    template_name = cached.get("template", "")
-                    transcoding_settings = cached.get("transcoding_settings", {})
-
-                    if not cached:
-                        # Determine the target template name, e.g., "Copy Video"
-                        target_tpl_name = f"Copy {stype.capitalize()}"
-                        tpl_obj = TemplateDataModel.get_template_by_name(self.app, target_tpl_name)
-                        
-                        if tpl_obj:
-                            template_name = target_tpl_name
-                            # Pre-populate the bundle with the template's actual settings
-                            transcoding_settings = {
-                                "codec": tpl_obj.get("codec", "copy"),
-                                "parameters": tpl_obj.get("parameters", {}).get("options", {}),
-                                "filters": tpl_obj.get("filters", {"mode": "simple", "entries": []})
-                            }
-                        else:
-                            # Fallback if the "Copy" template doesn't exist in the library
-                            transcoding_settings = {"codec": "copy"}
-
-                    stream_bundle = {
-                        "path": source_path,
-                        "index": stm_idx,
-                        "type": stype,
-                        "description": self.get_stream_description(stream),
-                        "duration": stream.get("duration") or file_duration or "0",
-                        "active": cached.get("active", stype in ['video', 'audio']),
-                        "template": template_name,
-                        "transcoding_settings": transcoding_settings,
-                        "metadata": cached.get("metadata", {}),
-                        "disposition": cached.get("disposition", []),
-                        "language": cached.get("language", ""),
-                        "trim_start": cached.get("trim_start", ""),
-                        "trim_length": cached.get("trim_length", ""),
-                        "trim_end": cached.get("trim_end", ""),
-                        "stream_delay": cached.get("stream_delay", "0")
-                    }
-
-                    row = SourceStreamRow(self, stream_bundle)
-                    self.lst_source_streams.append(row)
-
-            except Exception as e:
-                self._add_error_row(file_title, e)
+        # Fill sources
+        FFmpegMediaInfo.get_all_media_sources(self.source_paths, self.app, self.selected_streams, self.create_file_header, self.create_stream_row, self.create_error_row)
 
     def do_scroll_to_row(self, row):
         """Manually scrolls the ScrolledWindow to the position of a specific row"""
@@ -635,19 +556,6 @@ class JobSetupWindow(Gtk.ApplicationWindow):
                 self.entry_output_dir.set_text(folder.get_path())
         except Exception as e:
             print(f"Folder selection cancelled: {e}")
-
-    def _create_file_header(self, title, duration):
-        hbox = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=12)
-        hbox.set_margin_top(6)
-        hbox.set_margin_bottom(2)
-        hbox.set_margin_end(24)
-        lbl = Gtk.Label(label=f"<big><b>{title}</b></big>", use_markup=True, xalign=0, hexpand=True)
-        hbox.append(lbl)
-        hbox.append(Gtk.Label(label=duration, xalign=1))
-        row = Gtk.ListBoxRow(selectable=False)
-        row.set_child(hbox)
-        GLib.idle_add(self.do_scroll_to_row, row)
-        return row
 
     def on_save_job_clicked(self, _):
         """Gathers UI data DIRECTLY from widgets and saves to JobRow format"""
