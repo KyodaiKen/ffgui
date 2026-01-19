@@ -1,0 +1,11 @@
+type: audio
+codec: libmp3lame
+parameters:
+    options:
+        vbr: 1
+        q: 0
+        compression_level: 0
+        cutoff: 20000
+filters:
+    mode: simple
+    entries: []

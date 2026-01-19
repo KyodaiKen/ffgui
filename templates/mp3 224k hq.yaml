@@ -1,0 +1,13 @@
+path: /mnt/data/GIT/ffgui/templates/mp3 320k hq.yaml
+origin: System
+readonly: false
+type: audio
+codec: libmp3lame
+parameters:
+    options:
+        b: 224000
+        compression_level: 0
+        cutoff: 17000
+filters:
+    mode: simple
+    entries: []
