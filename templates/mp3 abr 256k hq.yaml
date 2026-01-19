@@ -2,8 +2,9 @@ type: audio
 codec: libmp3lame
 parameters:
     options:
-        b: 192000
+        abr: 1
         compression_level: 0
+        b: 256000
 filters:
     mode: simple
     entries: []

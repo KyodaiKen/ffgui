@@ -93,6 +93,10 @@ class FFmpegCmdCompiler:
 
             params = template_data.get('parameters', {}).get('options', {})
             for key, val in params.items():
+                # Making sure booleans are processed correctly for FFMPEG
+                if str(val).lower() in ["true", "false"]:
+                    val = 1 if val == "true" else 0
+
                 if key in FFmpegCmdCompiler.GLOBAL_OPTIONS:
                     cmd_parts.extend([f"-{key}", str(val)])
                 else:
