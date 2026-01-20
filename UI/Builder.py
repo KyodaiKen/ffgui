@@ -120,16 +120,14 @@ class Builder:
                 v_cur = Builder._parse_ffmpeg_num(value, 0)
 
             # Use 0.1 steps for floats, 1.0 for integers
-            # step = 0.1 if is_float else 1.0
-            step = 1
+            step = 0.01 if is_float else 1.0
             adj = Gtk.Adjustment(value=v_cur, lower=v_min, upper=v_max,
                                  step_increment=step, page_increment=step * 10)
             
             w = Gtk.SpinButton(adjustment=adj, numeric=True)
             
             if is_float:
-                # CRITICAL: This allows the 22.1 to actually be displayed
-                w.set_digits(1) 
+                w.set_digits(6)
             else:
                 w.set_digits(0)
 
