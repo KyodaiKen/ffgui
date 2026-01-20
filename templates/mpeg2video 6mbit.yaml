@@ -1,0 +1,8 @@
+type: video
+codec: mpeg2video
+parameters:
+    options:
+        b: 6000000
+filters:
+    mode: simple
+    entries: []

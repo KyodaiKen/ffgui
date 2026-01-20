@@ -1,0 +1,7 @@
+type: audio
+codec: pcm_dvd
+parameters:
+    options: {}
+filters:
+    mode: simple
+    entries: []
