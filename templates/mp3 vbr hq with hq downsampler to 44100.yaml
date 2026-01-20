@@ -1,0 +1,18 @@
+path: /mnt/data/GIT/ffgui/templates/mp3 vbr hq.yaml
+origin: System
+readonly: false
+type: audio
+codec: libmp3lame
+parameters:
+    options:
+        vbr: '1'
+        q: '0'
+        compression_level: 0
+        cutoff: 20000
+filters:
+    mode: simple
+    entries:
+    -   name: aresample
+        params:
+            osr: 44100
+            resampler: soxr
