@@ -2,6 +2,7 @@ import gi
 import os
 import threading
 import time
+import copy
 from Models.JobsDataModel import JobsDataModel
 gi.require_version("Gdk", "4.0")
 from gi.repository import Gtk, Gio, Gdk, GLib
@@ -395,6 +396,7 @@ class MainWindow(Gtk.ApplicationWindow):
     def _start_batch(self, jobs_list):
         """Common logic to launch the JobRunner"""
         if self.is_running:
+            print("Jobs are still running!")
             return
 
         ffmpeg_bin = self.app.ffmpeg_full_exec_path
@@ -417,7 +419,6 @@ class MainWindow(Gtk.ApplicationWindow):
         child = self.listbox.get_first_child()
         while child:
             if isinstance(child, JobRow):
-                child.job_data['_internal_status'] = JobStatus.PENDING
                 jobs_to_run.append(child.job_data)
             child = child.get_next_sibling()
         
@@ -427,47 +428,56 @@ class MainWindow(Gtk.ApplicationWindow):
             self._show_error("Queue Empty", "No pending jobs to run.")
 
     def on_retry_failed_clicked(self, button):
-        """Finds all failed jobs, resets them, and starts a new run."""
-        failed_jobs = []
+        all_jobs = []
+        found_failed = False
+        
         child = self.listbox.get_first_child()
         while child:
-            if isinstance(child, JobRow) and child.job_data.get('_internal_status') == JobStatus.FAILED:
-                # Reset Job Data
-                child.job_data['_internal_status'] = JobStatus.PENDING
-                child.job_data['_progress_percent'] = 0
-                if '_error_msg' in child.job_data:
-                    del child.job_data['_error_msg']
+            if isinstance(child, JobRow):
+                # 1. Check for failure
+
+                print(f"Status: {child.job_data.get('_internal_status')}")
+
+                if child.job_data.get('_internal_status') == JobStatus.FAILED:
+                    # 2. Reset the dictionary
+                    child.job_data['_internal_status'] = JobStatus.PENDING
+                    child.job_data['_progress_percent'] = 0
+                    child.job_data.pop('_error_msg', None)
+                    
+                    # 3. FORCE UI REFRESH IMMEDIATELY
+                    child.update_status("Waiting...")
+                    child.progress_bar.set_fraction(0.0)
+                    child.img_status.set_visible(False) # Remove the Red X
+                    
+                    found_failed = True
                 
-                # Reset Row UI
-                child.img_status.set_visible(False)
-                child.progress_bar.set_fraction(0.0)
-                child.update_status("Pending Retry...")
-                
-                # Disable the error log action again
-                action = child.action_group.lookup_action("view_error")
-                if action:
-                    action.set_enabled(False)
-                
-                failed_jobs.append(child.job_data)
+                all_jobs.append(child.job_data)
             child = child.get_next_sibling()
 
-        if failed_jobs:
-            self._start_batch(failed_jobs)
+        if found_failed:
+            self._start_batch(all_jobs)
 
-    def _runner_thread_callback(self, job_info, total_info, total_pct):
+    def _runner_thread_callback(self, job_data, job_info, total_info, total_pct):
         """
         Receives updates from the background JobRunner thread.
         Redirects to the main loop to update the UI safely.
         """
-        GLib.idle_add(self._update_ui_progress, job_info, total_info, total_pct)
+        snapshot = copy.deepcopy(job_data) if job_data else None
+        GLib.idle_add(self._update_ui_progress, snapshot, job_info, total_info, total_pct)
 
-    def _update_ui_progress(self, job_info, total_info, total_pct):
+    def _update_ui_progress(self, job_data, job_info, total_info, total_pct):
         self.pb.set_fraction(total_pct / 100.0)
         self.pb.set_text(total_info)
 
+        has_failures = False
         child = self.listbox.get_first_child()
         while child:
             if isinstance(child, JobRow):
+                # If this row is the one the runner just updated, 
+                # ensure our UI row is using the NEW data from the thread
+                if job_data and child.job_data.get('name') == job_data.get('name'):
+                    child.job_data.update(job_data)
+
                 status = child.job_data.get('_internal_status')
                 
                 if status == JobStatus.RUNNING:
@@ -495,15 +505,8 @@ class MainWindow(Gtk.ApplicationWindow):
                     if action:
                         action.set_enabled(True)
 
-            child = child.get_next_sibling()
-
-        has_failures = False
-        child = self.listbox.get_first_child()
-        while child:
-            if isinstance(child, JobRow):
-                # ... (your existing status image logic) ...
-                if child.job_data.get('_internal_status') == JobStatus.FAILED:
                     has_failures = True
+
             child = child.get_next_sibling()
 
         # Handle Final State
@@ -518,5 +521,6 @@ class MainWindow(Gtk.ApplicationWindow):
                 start_text = "Start"
             self.btn_start.set_label(start_text)
             self.pb.set_text("Batch Finished")
+            self.is_running = False
         
         return False # Required for GLib.idle_add to stop repeating

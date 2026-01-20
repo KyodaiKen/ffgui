@@ -24,27 +24,38 @@ class JobRunner:
         
         # Initialize internal statuses
         for job in self.job_list:
-            job['_internal_status'] = JobStatus.PENDING
-            job['_progress_percent'] = 0
+            if '_internal_status' not in job:
+                job['_internal_status'] = JobStatus.PENDING
+                job['_progress_percent'] = 0
 
     def run(self):
         total_jobs = len(self.job_list)
         
         for idx, job in enumerate(self.job_list):
+            # SKIP ALREADY COMPLETED JOBS
+            if job.get('_internal_status') != JobStatus.PENDING:
+                pct = round(((idx + 1) / total_jobs) * 100, 1)
+                self.update_callback(job, "Skipping completed job...", f"{pct}%", pct)
+                continue
+
             job['_internal_status'] = JobStatus.RUNNING
-            # _execute_job now returns True if success, False if failed
+            # Trigger UI update immediately so the row shows it's starting
+            self.update_callback(job, "Starting...", f"Job {idx+1}/{total_jobs}", (idx / total_jobs) * 100)
+            
             success = self._execute_job(job, idx, total_jobs)
             
+            # Mark final state
+            job['_internal_status'] = JobStatus.COMPLETED if success else JobStatus.FAILED
             if success:
-                job['_internal_status'] = JobStatus.COMPLETED
                 job['_progress_percent'] = 100
-            else:
-                job['_internal_status'] = JobStatus.FAILED
-                # We don't force 100% on failure so the progress bar 
-                # shows where it actually stopped.
+
+            #print(f"Job Status Posted: {job['_internal_status']}")
+
+            # Force an update immediately after the job finishes
+            pct = round(((idx + 1) / total_jobs) * 100, 1)
+            self.update_callback(job, "Job Finished", f"Batch: {pct}%", pct)
             
-        # Final update
-        self.update_callback("All jobs finished.", "100%, ETA 00:00:00", 100)
+        self.update_callback(None, "All jobs finished.", "100%", 100)
 
     def _execute_job(self, job, job_idx, total_jobs):
         # 1. Prepare Command
@@ -208,4 +219,4 @@ class JobRunner:
         
         total_progress_str = f"{total_percentage}%, Total ETA: {self._format_time(batch_eta_sec)}"
 
-        self.update_callback(job_info_str, total_progress_str, total_percentage)
+        self.update_callback(job, job_info_str, total_progress_str, total_percentage)

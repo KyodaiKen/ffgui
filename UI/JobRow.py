@@ -64,12 +64,13 @@ class JobRow(Gtk.ListBoxRow):
         add_act("remove_job", self.on_remove)
         add_act("job_clone", self.on_clone)
 
+        # Error Log Action (Disabled by default)
+        add_act("view_error", self.on_view_error, enabled=False)
+        add_act("reset_job_status", self.on_reset_status)
+
         add_act("toggle_video", lambda a, p: self.on_smart_toggle("video"))
         add_act("toggle_audio", lambda a, p: self.on_smart_toggle("audio"))
         add_act("toggle_subtitles", lambda a, p: self.on_smart_toggle("subtitles"))
-
-        # Error Log Action (Disabled by default)
-        add_act("view_error", self.on_view_error, enabled=False)
 
         add_act("batch_tpl_video", lambda a, p: self.on_batch_template("video"))
         add_act("batch_tpl_audio", lambda a, p: self.on_batch_template("audio"))
@@ -394,3 +395,29 @@ class JobRow(Gtk.ListBoxRow):
         # Cleanup ephemeral state
         self._selected_batch_rows = None
         self._batch_new_format = None
+
+    def on_reset_status(self, action, param):
+        """Resets selected jobs to PENDING status and clears UI progress/errors."""
+        from Core.JobRunner import JobStatus # Ensure JobStatus is accessible
+        
+        listbox = self.get_parent()
+        selected_rows = [row for row in listbox.get_selected_rows() if isinstance(row, JobRow)]
+
+        for row in selected_rows:
+            # 1. Update underlying data
+            row.job_data['_internal_status'] = JobStatus.PENDING
+            row.job_data['_progress_percent'] = 0
+            row.job_data.pop('_error_msg', None)
+            
+            # 2. Reset UI elements
+            row.img_status.set_visible(False)
+            row.progress_bar.set_fraction(0.0)
+            row.progress_bar.set_text("Pending...")
+            
+            # 3. Disable error action if it was enabled
+            err_action = row.action_group.lookup_action("view_error")
+            if err_action:
+                err_action.set_enabled(False)
+            
+            # 4. Trigger standard UI refresh
+            row.update_job_data(row.job_data)

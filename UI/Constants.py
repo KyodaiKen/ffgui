@@ -73,6 +73,10 @@ CONTEXT_MENU_XML = """
             <attribute name="label">View Error Log</attribute>
             <attribute name="action">context.view_error</attribute>
         </item>
+        <item>
+            <attribute name="label">Reset Status To Pending</attribute>
+            <attribute name="action">context.reset_job_status</attribute>
+        </item>
     </section>
     <section>
         <attribute name='label'>Useful Tools</attribute>

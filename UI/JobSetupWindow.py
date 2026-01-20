@@ -1,5 +1,5 @@
 import gi
-
+import copy
 gi.require_version("Gdk", "4.0")
 from gi.repository import GLib, Gtk, Gio, Gdk, Pango
 from UI.SourceStreamRow import SourceStreamRow
@@ -28,9 +28,9 @@ class JobSetupWindow(Gtk.ApplicationWindow):
 
         # 1. Initialize data structure from Model
         if mode in ["edit", "clone"] and job:
-            self.job_data = job
-            if mode == "clone":
-                self.job_data["name"] += " (Copy)"
+            # Use deepcopy so changes in this window don't affect the main UI 
+            # until the user actually clicks "OK"
+            self.job_data = copy.deepcopy(job)
         else:
             self.job_data = JobsDataModel.create_empty_job()
 
@@ -566,6 +566,18 @@ class JobSetupWindow(Gtk.ApplicationWindow):
         final_data["output"]["container"] = self.selected_container
         final_data["output"]["container_parameters"] = self.job_data["output"].get("container_parameters", [])
         final_data["sources"]["files"] = self.source_paths
+
+        # We copy all keys starting with '_' (like _internal_status, _progress_percent)
+        # from the existing job_data so we don't lose the "Failed" or "Running" status.
+        for key, value in self.job_data.items():
+            if key.startswith('_'):
+                final_data[key] = value
+
+        # If we are CLONING, we actually WANT to reset the status to PENDING
+        if self.mode == "clone":
+            final_data['_internal_status'] = "Pending" # Use JobStatus.PENDING if imported
+            final_data['_progress_percent'] = 0
+            final_data.pop('_error_msg', None)
 
         final_streams = []
         max_job_duration = 0.0
