@@ -115,10 +115,13 @@ class FFmpegBaseParser(ABC):
         return items
 
     def _clean_descr(self, raw_descr):
-        # 1. Extract metadata strings
-        min_match = re.search(r"from (.*?) to", raw_descr)
-        max_match = re.search(r"to (.*?)\)", raw_descr)
-        def_match = re.search(r"default (.*?)\)", raw_descr)
+        # 1. Extract metadata strings using specific anchors
+        # We look specifically for patterns inside parentheses to avoid description text
+        # Regex explanation: (?<=\bfrom\s) -> lookbehind for 'from '
+        # (-?[\w\./]+) -> captures numbers, hex, rationals (0/1), or constants (INT_MAX)
+        min_match = re.search(r"\(from\s+(-?[\w\./]+)", raw_descr)
+        max_match = re.search(r"to\s+(-?[\w\./]+)(?:\)|,)", raw_descr)
+        def_match = re.search(r"default\s+(-?[\w\./]+)\)", raw_descr)
 
         # 2. Extract and convert to numbers
         min_v = self._to_num(min_match.group(1)) if min_match else None
@@ -126,10 +129,13 @@ class FFmpegBaseParser(ABC):
         def_v = self._to_num(def_match.group(1)) if def_match else None
 
         # 3. Clean description text
-        clean = re.sub(r"\(from.*?default.*?\)", "", raw_descr).strip()
-        # Strip flag artifacts from the start
-        clean = re.sub(r"^[A-Z]\.\s+", "", clean)
-        clean = re.sub(r"^[EDVASFTR\.]{2,}\s*", "", clean)
+        # Remove the (from...to...) and (default...) blocks entirely
+        clean = re.sub(r"\(from.*?to.*?\)", "", raw_descr)
+        clean = re.sub(r"\(default.*?\)", "", clean)
+        
+        # Strip flag artifacts (e.g., "E..V..") from the start of the description
+        # This handles the case where flags are baked into the raw_descr string
+        clean = re.sub(r"^[EDVASFTR\.]{5,}\s+", "", clean.strip())
 
         return {
             "clean_descr": clean.strip(),
@@ -475,8 +481,6 @@ class FFmpegCodecParser(FFmpegBaseParser):
             # CLEANING LOGIC:
             # If brackets exist, main_name (e.g., 'av1') is a rogue name and MUST be excluded.
             if dec_match or enc_match:
-                rogue_names.add(main_name)
-
                 # Process actual usable handlers from brackets
                 line_handlers = []
                 if dec_match:
@@ -504,6 +508,10 @@ class FFmpegCodecParser(FFmpegBaseParser):
                     else:
                         codec_map[name]["flags"]["decoder"] |= h["is_dec"]
                         codec_map[name]["flags"]["encoder"] |= h["is_enc"]
+
+                # Only add to rogue list if the main_name itself is not in the description list
+                if not any(h["name"] == main_name for h in line_handlers):
+                    rogue_names.add(main_name)
             else:
                 # No brackets: The main name is a legitimate standalone codec (like wmav1)
                 # Only add if it hasn't been flagged as a rogue name earlier
@@ -556,7 +564,7 @@ class FFmpegCodecParser(FFmpegBaseParser):
                                         "context": param["context"]
                                     })
         except Exception as e:
-            # Optionally log: print(f"Error loading missing options: {e}")
+            print(f"Error loading missing options: {e}")
             pass
 
         return data

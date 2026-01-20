@@ -297,7 +297,7 @@ class SourceStreamRow(Gtk.ListBoxRow):
 
     def on_add_dsp_click(self, button):
         opts = getattr(self.parent_window.app, 'ffmpeg_data', {}).get('dispositions', {}).get('options', [])
-        self.pw = FlagsPickerWindow(parent=self.parent_window, options=opts, current_values=self.stream_disposition, on_apply=self.apply_disposition)
+        self.pw = FlagsPickerWindow(parent=self.parent_window, strings={"title": "Select disposition flags", "placeholder_text": "Search for disposition flags..."}, options=opts, current_values=self.stream_disposition, on_apply=self.apply_disposition)
         self.pw.present()
 
     def apply_disposition(self, selected_flags):

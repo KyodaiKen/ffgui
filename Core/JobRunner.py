@@ -20,6 +20,7 @@ class JobRunner:
         self.job_list = job_list
         self.ffmpeg_bin = ffmpeg_executable_path
         self.update_callback = update_callback
+        self.current_job_start_time = 0
         
         # Initialize internal statuses
         for job in self.job_list:
@@ -63,6 +64,8 @@ class JobRunner:
         total_duration_us = max_duration if max_duration > 0 else 1
 
         full_log = []
+
+        self.current_job_start_time = time.time()
 
         # 2. Launch Process
         if os.name == 'nt':
@@ -157,66 +160,52 @@ class JobRunner:
             return default
 
     def _process_update(self, job, job_idx, total_count, data, duration_us):
-        # 1. Parse current time (Microseconds)
-        # If N/A, we use the last percentage we had to avoid jumping back to 0
-        raw_us = data.get('out_time_us')
+        # 1. Parse current time and percentage (Keep your logic)
+        raw_us = self._get_safe_int(data, 'out_time_us')
+        current_us = raw_us if raw_us > 0 else int((job.get('_progress_percent', 0) / 100.0) * duration_us)
         
-        if raw_us == "N/A" or not raw_us:
-            # If we are finishing, force 100%. Otherwise, keep last known.
-            if data.get('progress') == 'end':
-                current_us = duration_us
-            else:
-                current_us = int((job.get('_progress_percent', 0) / 100.0) * duration_us)
-        else:
-            current_us = self._get_safe_int(data, 'out_time_us')
-
-        # 2. Calculate Percentage
-
         if duration_us > 0:
             percentage = min(100.0, round((current_us / duration_us) * 100, 1))
         else:
             percentage = 100.0 if data.get('progress') == 'end' else 0.0
-            
         job['_progress_percent'] = percentage
 
-        # 3. Parse Speed & FPS safely
-        speed = self._get_safe_float(data, 'speed', default=0.001)
+        # 2. Calculate Real Velocity (Media seconds processed / Real seconds elapsed)
+        elapsed_real_sec = time.time() - self.current_job_start_time
+        current_media_sec = current_us / 1_000_000
+        
+        # Avoid division by zero: calculate velocity
+        # If we just started, use FFmpeg's reported speed as a fallback
+        reported_speed = self._get_safe_float(data, 'speed', default=0.001)
+        velocity = current_media_sec / elapsed_real_sec if elapsed_real_sec > 0.5 else reported_speed
+
+        # 3. Job ETA
+        remaining_job_media_sec = max(0, (duration_us / 1_000_000) - current_media_sec)
+        job_eta_sec = remaining_job_media_sec / velocity if velocity > 0.01 else 0
+        
+        # 4. Total Batch ETA
+        # Calculate remaining media seconds for ALL future jobs
+        future_media_sec = 0
+        for i in range(job_idx + 1, total_count):
+            # Use the total_duration field we standardized in previous steps
+            future_media_sec += self.job_list[i].get('total_duration', 0)
+
+        total_remaining_media_sec = remaining_job_media_sec + future_media_sec
+        batch_eta_sec = total_remaining_media_sec / velocity if velocity > 0.01 else 0
+
+        # 5. UI Strings
         fps = data.get('fps', '0')
         speed_str = data.get('speed', '0x')
-
-        # 4. Calculate Job ETA
-        remaining_us = max(0, duration_us - current_us)
-        job_eta_sec = (remaining_us / 1_000_000) / speed if speed > 0.001 else 0
-        calculated_ETA = self._format_time(job_eta_sec)
-
-        # 5. Assemble individual job string
         bitrate = data.get('bitrate', 'N/A')
         total_size = self._format_size(self._get_safe_int(data, 'total_size'))
-        # Use 'out_time' string if available, otherwise format our current_us
         out_time_str = data.get('out_time', '00:00:00').split('.')[0]
-        if out_time_str == "N/A":
-             out_time_str = self._format_time(current_us / 1_000_000)
 
         job_info_str = (f"{percentage}% | FPS: {fps} | {bitrate} | Size: {total_size} | "
-                        f"Time: {out_time_str} | Speed: {speed_str} | ETA: {calculated_ETA}")
+                        f"Time: {out_time_str} | Speed: {speed_str} | ETA: {self._format_time(job_eta_sec)}")
 
-        # 6. Total Progress Calculation
         completed_weight = sum([j.get('_progress_percent', 0) for j in self.job_list])
         total_percentage = round(completed_weight / total_count, 1)
         
-        # 7. Total ETA Calculation
-        future_durations_sec = 0
-        for i in range(job_idx + 1, total_count):
-            d_ms = 0
-            # Look into the new metadata structure we built in JobSetupWindow
-            for s in self.job_list[i].get('sources', {}).get('streams', []):
-                if s.get('active'):
-                    d_ms = s.get('import_metadata', {}).get('duration', 0)
-                    break
-            future_durations_sec += (d_ms / 1000)
+        total_progress_str = f"{total_percentage}%, Total ETA: {self._format_time(batch_eta_sec)}"
 
-        total_remaining_sec = job_eta_sec + (future_durations_sec / speed if speed > 0.001 else 0)
-        total_progress_str = f"{total_percentage}%, Total ETA: {self._format_time(total_remaining_sec)}"
-
-        # Send to UI callback
         self.update_callback(job_info_str, total_progress_str, total_percentage)
