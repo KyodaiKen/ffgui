@@ -107,120 +107,7 @@ class ContainerParameterEditorWindow(Gtk.ApplicationWindow):
 
         btn_del.connect("clicked", lambda _: self.lst_params.remove(row))
         self.lst_params.append(row)
-    """
-    def create_value_widget(self, key, value, schema):
-        if not schema:
-            return Gtk.Entry(text=str(value if value is not None else ""), hexpand=True)
 
-        p_type = str(schema.get("type", "string")).lower()
-        options_list = schema.get("options", [])
-
-        # 1. Multi-Select Flags as Pills (Gtk.FlowBox)
-        if p_type == "flags":
-            btn = Gtk.Button(hexpand=True)
-            btn.set_valign(Gtk.Align.CENTER)
-            
-            # The container for the pills inside the button
-            flowbox = Gtk.FlowBox(
-                selection_mode=Gtk.SelectionMode.NONE,
-                column_spacing=4,
-                row_spacing=4
-            )
-            btn.set_child(flowbox)
-            
-            # Store the current state on the button object for easy extraction
-            btn._current_value = value
-
-            # Internal helper to refresh the UI
-            def refresh_ui(new_values):
-                btn._current_value = new_values
-                
-                Builder.build_pill(flowbox, new_values, no_target=True)
-                
-                # Show a placeholder if empty
-                if not flowbox.get_first_child():
-                    lbl = Gtk.Label(label="None selected")
-                    lbl.add_css_class("dim-label")
-                    flowbox.append(lbl)
-
-            # Initial population
-            refresh_ui(btn._current_value)
-
-            def on_picker_clicked(_):
-                strings = {
-                    "title": f"Select {key}",
-                    "placeholder_text": "Search flags..."
-                }
-                # Open the window we created earlier
-                win = FlagsPickerWindow(
-                    parent=self, 
-                    options=options_list, 
-                    current_values=btn._current_value, 
-                    strings=strings, 
-                    on_apply=refresh_ui
-                )
-                win.present()
-
-            btn.connect("clicked", on_picker_clicked)
-            return btn
-
-        # 2. Single-Select DropDown (for non-flag options)
-        if options_list and p_type != "flags":
-            tech_values = [str(o.get('name')) for o in options_list]
-            display_names = [f"{o.get('name')} ({o.get('descr')})" if o.get('descr') else str(o.get('name')) for o in options_list]
-            
-            w = Gtk.DropDown(model=Gtk.StringList.new(display_names), hexpand=True)
-            w._tech_values = tech_values
-            
-            # Determine initial selection
-            cur_val = str(value) if value is not None else str(schema.get("default", ""))
-            try:
-                if cur_val in tech_values:
-                    w.set_selected(tech_values.index(cur_val))
-            except ValueError:
-                pass
-            return w
-        
-        # 3. Booleans (Switches)
-        if p_type in ["bool", "boolean"]:
-            active = str(value).lower() in ['true', '1', 'on'] if value is not None else bool(schema.get("default"))
-            return Gtk.Switch(active=active, halign=Gtk.Align.START)
-
-        # 4. Numeric (Spinners)
-        if any(t in p_type for t in ["int", "integer", "float", "double"]):
-            # Check if this is a floating point value
-            is_float = any(x in p_type for x in ["float", "double"])
-            
-            v_min = self._parse_ffmpeg_num(schema.get("min"), -2147483648)
-            v_max = self._parse_ffmpeg_num(schema.get("max"), 2147483647)
-            
-            # Value handling
-            if value is None or value == "":
-                v_cur = self._parse_ffmpeg_num(schema.get("default"), 0)
-            else:
-                v_cur = self._parse_ffmpeg_num(value, 0)
-
-            # Use 0.1 steps for floats, 1.0 for integers
-            # step = 0.1 if is_float else 1.0
-            step = 1
-            adj = Gtk.Adjustment(value=v_cur, lower=v_min, upper=v_max,
-                                 step_increment=step, page_increment=step * 10)
-            
-            w = Gtk.SpinButton(adjustment=adj, numeric=True)
-            
-            if is_float:
-                # CRITICAL: This allows the 22.1 to actually be displayed
-                w.set_digits(1) 
-            else:
-                w.set_digits(0)
-
-            w.set_value(v_cur) 
-            return w
-
-        # 5. Default (Entry)
-        return Gtk.Entry(text=str(value if value is not None else ""), hexpand=True)
-    """
-    
     def _update_flag_button_label(self, btn):
         """Updates the MenuButton text to show selected flags."""
         active = [name for name, cb in btn._check_buttons.items() if cb.get_active()]
@@ -269,7 +156,7 @@ class ContainerParameterEditorWindow(Gtk.ApplicationWindow):
     def on_save_clicked(self, _):
         updated_params = []
         for row in self._get_all_rows():
-            val = self.extract_widget_value(row._val_widget)
+            val = Builder.extract_widget_value(row._val_widget)
             updated_params.append({"name": row._key, "value": val})
 
         if self.on_save_callback:
@@ -279,20 +166,3 @@ class ContainerParameterEditorWindow(Gtk.ApplicationWindow):
             self.job_data["output"]["container_parameters"] = updated_params
         
         self.destroy()
-
-    def extract_widget_value(self, w):
-        """Helper to get value from widget."""
-        if isinstance(w, Gtk.Button) and hasattr(w, "_current_value"):
-            return w._current_value
-        elif isinstance(w, Gtk.DropDown):
-            if hasattr(w, "_tech_values"):
-                return w._tech_values[w.get_selected()]
-            return w.get_selected_item().get_string()
-        elif isinstance(w, Gtk.SpinButton):
-            val = w.get_value()
-            return int(val) if val.is_integer() else val
-        elif isinstance(w, Gtk.Switch):
-            return w.get_active()
-        elif isinstance(w, Gtk.Entry):
-            return w.get_text()
-        return ""

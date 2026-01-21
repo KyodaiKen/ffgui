@@ -553,35 +553,9 @@ class TemplateEditorWindow(Gtk.ApplicationWindow):
         while row:
             # GTK ListBox rows might contain separators or focus placeholders
             if hasattr(row, "_val_widget"):
-                options[row._key] = self.extract_widget_value(row._val_widget)
+                options[row._key] = Builder.extract_widget_value(row._val_widget)
             row = row.get_next_sibling()
         return options
-
-    def extract_widget_value(self, w):
-        """Helper to get the technical value from various widget types."""
-        if isinstance(w, Gtk.DropDown):
-            # Use our custom attribute stored during creation
-            if hasattr(w, "_tech_values"):
-                return w._tech_values[w.get_selected()]
-            return w.get_selected_item().get_string()
-
-        elif isinstance(w, Gtk.SpinButton):
-            # Check if it's effectively an integer
-            val = w.get_value()
-            return int(val) if val.is_integer() else val
-
-        elif isinstance(w, Gtk.Switch):
-            return 1 if w.get_active() else 0
-
-        elif isinstance(w, Gtk.Entry):
-            return w.get_text()
-
-        elif isinstance(w, Gtk.MenuButton) and hasattr(w, "_check_buttons"):
-            # Flag extraction
-            active = [k for k, (cb, _) in w._check_buttons.items() if cb.get_active()]
-            return "+".join(active)
-
-        return ""
 
     def on_filter_mode_changed(self, combo, _):
         mode = "complex" if combo.get_selected() == 1 else "simple"
@@ -674,8 +648,19 @@ class TemplateEditorWindow(Gtk.ApplicationWindow):
         self.lst_filters.append(row)
 
     def _update_filter_row_label(self, row):
-        """Creates a string like 'w=1280:h=720' for the UI summary."""
-        summary = ":".join([f"{k}={v}" for k, v in row._filter_params.items()])
+        """Creates a string like 'w=1280:h=720:flags=neighbor+print_info' for the UI summary."""
+        param_strings = []
+        
+        for k, v in row._filter_params.items():
+            # Handle list values (Flags) by joining with '+'
+            if isinstance(v, list):
+                formatted_value = "+".join(str(item) for item in v)
+            else:
+                formatted_value = str(v)
+            
+            param_strings.append(f"{k}={formatted_value}")
+
+        summary = ":".join(param_strings)
         row._summary_lbl.set_text(summary or "(no parameters)")
 
     def get_current_parameters(self):

@@ -5,6 +5,20 @@ from UI.FlagsPickerWindow import FlagsPickerWindow
 
 class Builder:
     @staticmethod
+    def _parse_ffmpeg_num(val, fallback=0):
+        """Extracts the first numeric part of a string like '51, 0 means auto'."""
+        if isinstance(val, (int, float)):
+            return float(val)
+        if not val:
+            return float(fallback)
+        try:
+            # Take the first word and strip non-numeric characters
+            clean = str(val).split(',')[0].split(' ')[0]
+            return float(''.join(c for c in clean if c.isdigit() or c in '.-'))
+        except (ValueError, IndexError):
+            return float(fallback)
+        
+    @staticmethod
     def build_pill(flowbox, tags, no_target=False):
         # First, clear existing pills to allow for refreshing
         while child := flowbox.get_first_child():
@@ -36,7 +50,7 @@ class Builder:
         options_list = schema.get("options", [])
         p_type = str(schema.get("type", "string")).lower()
 
-        # 1. Multi-Select Flags as Pills (Gtk.FlowBox)
+        # Multi-Select Flags as Pills (Gtk.FlowBox)
         if p_type == "flags" and options_list:
             btn = Gtk.Button(hexpand=True)
             btn.set_valign(Gtk.Align.CENTER)
@@ -86,7 +100,7 @@ class Builder:
             btn.connect("clicked", on_picker_clicked)
             return btn
 
-        # 1. PRIORITY: If there are options, it's a DropDown, regardless of 'type'
+        # DROPDOWN: If there are options, it's a DropDown, regardless of 'type' if 'type' is not "flags"
         
         if options_list and not p_type == "flags":
             tech_values = [str(o.get('name')) for o in options_list]
@@ -104,7 +118,7 @@ class Builder:
                 pass
             return w
 
-        # 2. NUMERIC: Logic for Spinners
+        # NUMERIC: Logic for Spinners
         
         if any(t in p_type for t in ["int", "integer", "float", "double"]):
             # Check if this is a floating point value
@@ -142,15 +156,44 @@ class Builder:
         return Gtk.Entry(text=str(value if value is not None else ""), hexpand=True)
 
     @staticmethod
-    def _parse_ffmpeg_num(val, fallback=0):
-        """Extracts the first numeric part of a string like '51, 0 means auto'."""
-        if isinstance(val, (int, float)):
-            return float(val)
-        if not val:
-            return float(fallback)
-        try:
-            # Take the first word and strip non-numeric characters
-            clean = str(val).split(',')[0].split(' ')[0]
-            return float(''.join(c for c in clean if c.isdigit() or c in '.-'))
-        except (ValueError, IndexError):
-            return float(fallback)
+    def extract_widget_value(widget):
+        """
+        Extracts the value from a widget created by build_value_widget.
+        """
+        if widget is None:
+            return None
+
+        # 1. Multi-Select Flags (The Button with the FlowBox)
+        if isinstance(widget, Gtk.Button) and hasattr(widget, "_current_value"):
+            # We stored the list of strings in _current_value during refresh_ui
+            return widget._current_value
+
+        # 2. DropDown (Selection list)
+        if isinstance(widget, Gtk.DropDown):
+            selected_idx = widget.get_selected()
+            if hasattr(widget, "_tech_values") and selected_idx != Gtk.INVALID_LIST_POSITION:
+                return widget._tech_values[selected_idx]
+            return None
+
+        # 3. Numeric (SpinButton)
+        if isinstance(widget, Gtk.SpinButton):
+            # If digits > 0, it's likely a float/double
+            if widget.get_digits() > 0:
+                return widget.get_value()
+            else:
+                return int(widget.get_value())
+
+        # 4. Boolean (Switch)
+        if isinstance(widget, Gtk.Switch):
+            return widget.get_active()
+
+        # 5. Default/Entry (Gtk.Entry)
+        if isinstance(widget, Gtk.Entry):
+            # Use the buffer text directly
+            return widget.get_text()
+
+        # Fallback for generic widgets containing a text property
+        if hasattr(widget, "get_text"):
+            return widget.get_text()
+
+        return None

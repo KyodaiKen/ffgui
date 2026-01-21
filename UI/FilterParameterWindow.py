@@ -96,7 +96,7 @@ class FilterParameterWindow(Gtk.ApplicationWindow):
         row = self.lst_params.get_first_child()
         while row:
             if hasattr(row, "_param_name"):
-                val = self.template_editor.extract_widget_value(row._val_widget)
+                val = Builder.extract_widget_value(row._val_widget)
                 if val is not None and val != "":
                     results[row._param_name] = val
             row = row.get_next_sibling()
