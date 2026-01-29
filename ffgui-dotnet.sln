@@ -2,7 +2,7 @@ Microsoft Visual Studio Solution File, Format Version 12.00
 # Visual Studio Version 17
 VisualStudioVersion = 17.5.2.0
 MinimumVisualStudioVersion = 10.0.40219.1
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "ffgui-dotnet", "ffgui-dotnet.csproj", "{9425437B-8D1B-BAA8-FC24-9BA38A844F98}"
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "ffgui", "ffgui-dotnet.csproj", "{9425437B-8D1B-BAA8-FC24-9BA38A844F98}"
 EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution

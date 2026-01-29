@@ -2,15 +2,26 @@
 
   <PropertyGroup>
     <OutputType>Exe</OutputType>
+    <AssemblyName>ffgui</AssemblyName>
     <TargetFramework>net8.0</TargetFramework>
-    <RootNamespace>ffgui_dotnet</RootNamespace>
+    <RootNamespace>FFGui</RootNamespace>
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
   </PropertyGroup>
 
   <ItemGroup>
+    <PackageReference Include="GirCore.Adw-1" Version="0.7.0" />
+    <PackageReference Include="GirCore.Gio-2.0" Version="0.7.0" />
     <PackageReference Include="GirCore.Gtk-4.0" Version="0.7.0" />
     <PackageReference Include="YamlDotNet" Version="16.3.0" />
   </ItemGroup>
+
+  <PropertyGroup Condition="'$(RuntimeIdentifier)' == 'win-x64'">
+    <PublishDir>publish-win\</PublishDir>
+  </PropertyGroup>
+
+  <PropertyGroup Condition="'$(RuntimeIdentifier)' == 'linux-x64'">
+    <PublishDir>publish-linux\</PublishDir>
+  </PropertyGroup>
 
 </Project>

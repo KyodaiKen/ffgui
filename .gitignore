@@ -4,8 +4,8 @@ obj/
 
 # custom
 .cache
-dist
-build
 ffmpeg
 gtk-icons
 theme
+publish-*/
+
