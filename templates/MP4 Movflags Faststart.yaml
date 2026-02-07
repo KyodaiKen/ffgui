@@ -1,0 +1,4 @@
+Muxer: mp4
+Parameters:
+  movflags: faststart
+Description: MP$ with faststart movflag set

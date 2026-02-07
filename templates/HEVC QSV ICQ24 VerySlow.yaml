@@ -1,0 +1,9 @@
+Type: video
+EncoderSettings:
+  Encoder: hevc_qsv
+  Parameters:
+    global_quality: 24
+    preset: veryslow
+  UsesComplexFilters: false
+  Filters: []
+Description: ''

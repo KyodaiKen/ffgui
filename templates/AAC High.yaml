@@ -1,0 +1,8 @@
+Type: audio
+EncoderSettings:
+  Encoder: aac
+  Parameters:
+    b: 224000
+  UsesComplexFilters: false
+  Filters: []
+Description: aac 224k

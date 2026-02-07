@@ -1,0 +1,90 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <AssemblyName>ffgui</AssemblyName>
+    <TargetFramework>net10.0</TargetFramework>
+    <RootNamespace>FFGui</RootNamespace>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <DefineConstants Condition="$([MSBuild]::IsOSPlatform('Windows'))">$(DefineConstants);WINDOWS</DefineConstants>
+    <DefineConstants>$(DefineConstants);VERBOSE</DefineConstants>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="GirCore.Gio-2.0" Version="0.7.0" />
+    <PackageReference Include="GirCore.Gtk-4.0" Version="0.7.0" />
+    <PackageReference Include="MemoryPack" Version="1.21.4" />
+    <PackageReference Include="YamlDotNet" Version="16.3.0" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <None Update="lng.psv">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
+  </ItemGroup>
+
+  <ItemGroup>
+    <Content Include="templates\**\*">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>
+  </ItemGroup>
+
+  <ItemGroup>
+    <Content Include=".cache\**\*">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+      <CopyToPublishDirectory>Never</CopyToPublishDirectory>
+    </Content>
+  </ItemGroup>
+
+  <ItemGroup Condition="$(RuntimeIdentifier.StartsWith('linux-'))">
+    <None Include="setup.sh">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+      <CopyToPublishDirectory>PreserveNewest</CopyToPublishDirectory>
+    </None>
+  </ItemGroup>
+
+  <PropertyGroup Condition="'$(RuntimeIdentifier)' == 'win-x64'">
+    <PublishDir>publish-win\</PublishDir>
+  </PropertyGroup>
+
+  <PropertyGroup Condition="'$(RuntimeIdentifier)' == 'osx-arm64'">
+    <PublishDir>publish-osx\</PublishDir>
+  </PropertyGroup>
+
+  <PropertyGroup Condition="'$(RuntimeIdentifier)' == 'linux-x64'">
+    <PublishDir>publish-linux\</PublishDir>
+  </PropertyGroup>
+
+  <Target Name="CopyAssets" AfterTargets="Build">
+    <Copy SourceFiles="ffgui.svg" DestinationFolder="$(OutputPath)" />
+  </Target>
+
+  <Target Name="FinalizeLinuxPublish" AfterTargets="Publish" Condition="$(RuntimeIdentifier.StartsWith('linux-'))">
+    <PropertyGroup>
+      <AppId>de.kyo.ffgui</AppId>
+    </PropertyGroup>
+
+    <Exec Command="chmod +x $(PublishDir)setup.sh" />
+
+    <Copy SourceFiles="ffgui.svg" DestinationFiles="$(PublishDir)$(AppId).svg" />
+
+    <Message Text="Linux deployment package finalized in $(PublishDir)" Importance="high" />
+  </Target>
+
+  <PropertyGroup Condition="$([MSBuild]::IsOSPlatform('Windows'))">
+    <ApplicationIcon>ffgui.ico</ApplicationIcon>
+  </PropertyGroup>
+
+  <ItemGroup Condition="$([MSBuild]::IsOSPlatform('Windows'))">
+    <None Include="ffgui.ico">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
+  </ItemGroup>
+
+  <ItemGroup>
+    <Folder Include="src/Helpers/" />
+    <Folder Include="src/UI/Editors/TemplateEditor/" />
+  </ItemGroup>
+
+</Project>

@@ -1,0 +1,14 @@
+bin/
+obj/
+.vscode/
+
+# custom
+.cache
+ffmpeg
+gtk-icons
+theme
+publish-*/
+7z-win.sfx
+
+
+lng.psv

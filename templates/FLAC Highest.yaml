@@ -1,0 +1,8 @@
+Type: audio
+EncoderSettings:
+  Encoder: flac
+  Parameters:
+    compression_level: 8
+  UsesComplexFilters: false
+  Filters: []
+Description: FLAC level 8

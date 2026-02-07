@@ -1,0 +1,52 @@
+{
+  "mp3": {
+    "description": "MPEG-1 Audio",
+    "audio_codecs": ["libmp3lame", "mp3", "mp2", "mp1"],
+    "video_codecs": ["png", "jpeg"],
+    "allows_multiple_audio": false,
+    "default_extension": "mp3"
+  },
+  "mp4": {
+    "description": "MPEG-4 Part 14",
+    "audio_codecs": ["flac", "aac", "libopus", "mp3", "libmp3lame", "mp2", "ac3", "eac3", "dts", "alac"],
+    "video_codecs": ["h264", "libx264", "libx265", "h264_nvenc", "h264_amf", "h264_qsv", "h264_vaapi", "libx264rgb", "libopenh264", "h264_v4l2m2m", "h264_vulkan", "hevc", "hevc_nvenc", "hevc_amf", "hevc_qsv", "hevc_vaapi", "hevc_v4l2m2m", "hevc_vulkan", "libaom-av1", "librav1e",  "libsvtav1", "av1", "av1_nvenc", "av1_amf", "av1_qsv", "av1_vaapi", "vp9", "libvpx-vp9", "vp9_vaapi", "vp9_qsv", "vvc", "libvvenc"],
+    "allows_multiple_audio": true,
+    "default_extension": "mp4"
+  },
+  "matroska": {
+    "description": "Matroska",
+    "audio_codecs": ["*"],
+    "video_codecs": ["*"],
+    "allows_multiple_audio": true,
+    "default_extension": "mkv",
+    "note": "Supports almost every codec known to FFmpeg."
+  },
+  "m4a": {
+    "description": "Apple Audio Container",
+    "audio_codecs": ["aac", "alac"],
+    "video_codecs": [],
+    "allows_multiple_audio": false,
+    "default_extension": "m4a"
+  },
+  "flac": {
+    "description": "Free Lossless Audio Codec",
+    "audio_codecs": ["flac"],
+    "video_codecs": [],
+    "allows_multiple_audio": false,
+    "default_extension": "flac"
+  },
+  "ogg": {
+    "description": "Ogg Container",
+    "audio_codecs": ["libvorbis", "libopus", "flac"],
+    "video_codecs": ["libtheora"],
+    "allows_multiple_audio": true,
+    "default_extension": "ogg"
+  },
+  "wav": {
+    "description": "Waveform Audio File Format",
+    "audio_codecs": ["pcm_s16le", "pcm_s24le", "pcm_f32le", "atrac3", "gsm"],
+    "video_codecs": [],
+    "allows_multiple_audio": false,
+    "default_extension": "wav"
+  }
+}

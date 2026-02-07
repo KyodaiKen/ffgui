@@ -1,0 +1,12 @@
+Type: video
+EncoderSettings:
+  Encoder: libsvtav1
+  Parameters:
+    crf: 16
+    preset: 2
+  UsesComplexFilters: false
+  Filters: []
+Description: >-
+  Template for archiving video or film material with perceptually lossless quality
+
+  - uses libsvtav1
