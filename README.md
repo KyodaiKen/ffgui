@@ -1,6 +1,7 @@
 # ffGUI
 
-[![Python](https://img.shields.io/badge/python-3.10%2B-blue.svg)](https://www.python.org/)
+[![C#](https://img.shields.io/badge/c%23-%23239120.svg?logo=c-sharp&logoColor=white)](https://learn.microsoft.com/en-us/dotnet/csharp/)
+[![.NET 10](https://img.shields.io/badge/.NET-10-512bd4.svg?logo=dotnet&logoColor=white)](https://dotnet.microsoft.com/download/dotnet/10.0)
 [![GTK](https://img.shields.io/badge/GUI-GTK4-orange.svg)](https://www.gtk.org/)
 [![FFmpeg](https://img.shields.io/badge/Engine-FFmpeg-green.svg)](https://ffmpeg.org/)
 
