@@ -5,90 +5,96 @@
 [![GTK](https://img.shields.io/badge/GUI-GTK4-orange.svg)](https://www.gtk.org/)
 [![FFmpeg](https://img.shields.io/badge/Engine-FFmpeg-green.svg)](https://ffmpeg.org/)
 
-A powerful, template-driven GTK4 frontend for FFmpeg, designed for transcoding media files with batch job management.
-**ffGUI** provides a granular interface for controlling individual streams, metadata, and dispositions while maintaining a streamlined workflow through a robust template system.
+A powerful, template-driven GTK4 frontend for FFmpeg, rewritten in C# for .NET 10. Designed for high-performance media transcoding with advanced batch job management.
+
+**ffGUI** provides a granular interface for controlling individual streams, metadata, and dispositions while maintaining a streamlined workflow through a robust, reusable template system.
 
 ## ✨ Features
 
 * **Granular Stream Control:** Modify settings for video, audio, and subtitle streams individually within a single source file.
-* **Template-Based Workflow:** Apply global templates (e.g., "Copy Video", "High Quality H264") to streams instantly to ensure consistency.
-* **Dynamic UI Validation:** Real-time checking of template integrity; rows highlight with warnings if referenced templates are missing from the library.
+* **Template-Based Workflow:** Apply global transcoding profiles (e.g., "High Quality H265", "Copy Audio") to streams instantly.
+* **Smart Working Directory:** Automatically detects "Portable Mode" (writable application folder) or "Installed Mode" (using XDG data paths on Linux or %APPDATA% on Windows).
+* **Dynamic UI Validation:** Real-time checking of template integrity; rows highlight with warnings if referenced templates are missing.
 * **Advanced Metadata & Disposition:** Built-in editors for stream-level metadata and FFmpeg disposition flags (default, forced, etc.).
-* **Precision Trimming:** Automatic calculation of trim lengths, starts, and ends with a synchronized UI.
-* **Batch Processing:** Drag-and-drop multiple files to create a job queue with global progress tracking and multi-threaded execution.
-* **Job Cloning & Editing:** Clone existing jobs to tweak settings without starting from scratch.
+* **Precision Trimming:** Built-in calculation for trim lengths and offsets with a synchronized UI.
+* **Batch Processing:** Queue multiple jobs with multi-threaded execution and global progress tracking.
 
-## 🚀 Installation
+---
+
+## 🚀 Installation & Building
 
 ### Prerequisites
 
-* **Python 3.10+**
-* **GTK4** & **PyGObject**
-* **FFmpeg** (installed and accessible in your PATH OR set up the location in the settings)
+* **[.NET 10 SDK](https://dotnet.microsoft.com/download/dotnet/10.0)**
+* **GTK4 Libraries:**
+    * **Linux:** `libgtk-4-dev` (e.g., `sudo apt install libgtk-4-dev` on Debian/Ubuntu).
+    * **Windows:** Ensure GTK4 DLLs are in your PATH or the application folder.
+* **FFmpeg:** Must be accessible in your system PATH or configured manually in the application settings.
 
-NOTICE: The first start may take a while as the application does an introspection of the FFMPEG capabilities.
-In a later version, this will run a lot faster.
+> **Note:** The first launch performs a full introspection of your FFmpeg capabilities to build a feature cache. This may take 10-30 seconds depending on your hardware and antivirus.
 
-### 🐧 Linux / 🍎 MacOS Setup
+---
 
-1. Clone the repository:
+### 🐧 Linux Setup
+
+1.  **Clone and Build:**
     ```bash
     git clone [https://github.com/yourusername/ffgui.git](https://github.com/yourusername/ffgui.git)
     cd ffgui
+    dotnet publish -c Release -r linux-x64 --self-contained
     ```
-2. Install dependencies:
+2.  **Install to System:**
+    Navigate to the publish directory and run the included setup script:
     ```bash
-     pip install PyGObject pycountry pyyaml
+    cd bin/Release/net10.0/linux-x64/publish/
+    sudo ./setup.sh
     ```
-    NOTICE: PyGObject is build from sources, so make sure to read the PyGObject documentation.
-3. Run the application:
+    *The script installs the app to `/opt/ffgui`, registers the icon, and creates a `.desktop` menu entry.*
+
+---
+
+### 🪟 Windows Setup
+
+1.  **Build from Source:**
     ```bash
-    python ffgui.py
+    dotnet publish -c Release -r win-x64 --self-contained
     ```
-    
-### 🪟 Windows 64-Bit only
-A Windows UCRT 64-Bit binary can be found under releases.
+2.  **Run:**
+    * Navigate to `bin\Release\net10.0\win-x64\publish\`.
+    * Run `ffgui.exe`.
+    * The app runs in **Portable Mode** if the directory is writable, keeping all settings and templates in the local folder.
 
-1. Extract the 7z file wherever you like
-2. Place your favorite FFMPEG under `codecs\ffmpeg`.
-3. Run `ffgui.exe`
-
-OR
-
-1. Extract the 7z file wherever you like
-2. Run `ffgui.exe`
-3. Go to the burger menu and then Settings
-4. Point to your FFMPEG binary directory and click "Save & Rescan"
-
-NOTICE: Under Windows it can take a while until the application first starts due to the Smart Screen Filter and introspection can be slow depending on the antivirus solution you are using.
+---
 
 ## 🛠 Project Structure
 
-* `Core/`: The engine room, containing the `JobRunner` and utility functions for time and media parsing.
-* `Models/`: Data logic for jobs (`JobsDataModel`) and templates (`TemplateDataModel`).
-* `UI/:` GTK4 window definitions:
-    * `JobSetupWindow`: The primary interface for configuring file sources.
-    * `SourceStreamRow`: Individual widget logic for stream settings.
-    * `TemplateEditorWindow`: Create and modify reusable transcoding profiles.
-    * and more...
-    
+The project has been reorganized into a clean `src/` architecture:
+
+* **`src/Core/`**: The engine room. Contains `FFGuiApp`, `JobRunner`, and FFmpeg introspection logic.
+* **`src/Models/`**: Data structures for Jobs, Templates, and FFmpeg capability mapping.
+* **`src/UI/`**: GTK4 window definitions and custom widgets (JobSetup, TemplateEditor, etc.).
+* **`src/Helpers/`**: Utilities for YAML serialization, shell execution, and path resolution.
+* **`templates/`**: Default transcoding profiles included with the application.
+
+
+
+---
+
 ## 📂 Data Management
 
-* The application stores templates and job configurations in YAML format in `templates/`
-* Job list are also stored in the YAML format for easy text based editing
+ffGUI is smart about where it saves your data:
 
-## 🔮 Future plans
+* **Portable Mode:** If the application folder is writable, all `.yaml` settings and templates are stored locally.
+* **Installed Mode (Linux):** Settings are stored in `~/.local/share/de.kyo.ffgui/` and system templates are read from `/opt/ffgui/templates/`.
+* **Installed Mode (Windows):** Settings are stored in `%APPDATA%\de.kyo.ffgui\`.
 
-* Polish and improvements.
-* Adding a command line mode to run saved job lists via command line for those who want to automate FFMPEG using ffgui without using the GUI.
+---
 
-## 🤝 Contributing
+## 🔮 Future Plans
 
-1. Fork the Project
-2. Create your Feature Branch (git checkout -b feature/AmazingFeature)
-3. Commit your Changes (git commit -m 'Add some AmazingFeature')
-4. Push to the Branch (git push origin feature/AmazingFeature)
-5. Open a Pull Request
+* **CLI Mode:** Ability to run saved job lists via terminal for automation without the GUI.
+* **Enhanced Introspection:** Faster startup by optimizing the FFmpeg capability scan.
+* **Theme Support:** Better integration with system-wide Dark/Light mode switching.
 
 ## 📜 License
 
