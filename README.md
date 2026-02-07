@@ -41,7 +41,7 @@ A powerful, template-driven GTK4 frontend for FFmpeg, rewritten in C# for .NET 1
     ```bash
     git clone [https://github.com/yourusername/ffgui.git](https://github.com/yourusername/ffgui.git)
     cd ffgui
-    dotnet publish -c Release -r linux-x64 --self-contained
+    ./publish-linux.sh
     ```
 2.  **Install to System:**
     Navigate to the publish directory and run the included setup script:
@@ -55,9 +55,9 @@ A powerful, template-driven GTK4 frontend for FFmpeg, rewritten in C# for .NET 1
 
 ### 🪟 Windows Setup
 
-1.  **Build from Source:**
+1.  **Build from Source: (Requires Windows with MSYS2 UCRT environment with gtk fully installed)**
     ```bash
-    dotnet publish -c Release -r win-x64 --self-contained
+    ./publish-win64.sh
     ```
 2.  **Run:**
     * Navigate to `bin\Release\net10.0\win-x64\publish\`.
