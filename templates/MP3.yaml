@@ -1,0 +1,4 @@
+Muxer: mp3
+Parameters:
+  movflags: faststart
+Description: MP3

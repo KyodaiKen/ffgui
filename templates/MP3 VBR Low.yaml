@@ -1,0 +1,15 @@
+Type: audio
+EncoderSettings:
+  Encoder: libmp3lame
+  Parameters:
+    q: 4
+    compression_level: 0
+  UsesComplexFilters: false
+  Filters:
+  - FilterName: aresample
+    ComplexInputConnections: []
+    ComplexOutputConnections: []
+    Parameters:
+      out_sample_rate: 44100
+      resampler: soxr
+Description: ''
