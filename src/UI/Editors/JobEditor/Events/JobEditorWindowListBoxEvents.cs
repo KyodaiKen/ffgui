@@ -303,6 +303,7 @@ public partial class JobEditorWindow
                     () =>
                     {
                         _job.Metadata.Remove(key);
+                        _updateStreamSetupUI(stream);
                     },
                     () => { }
                 );
