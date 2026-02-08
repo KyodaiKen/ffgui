@@ -7,8 +7,12 @@
     <RootNamespace>FFGui</RootNamespace>
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
-    <DefineConstants Condition="$([MSBuild]::IsOSPlatform('Windows'))">$(DefineConstants);WINDOWS</DefineConstants>
     <DefineConstants>$(DefineConstants);VERBOSE</DefineConstants>
+    <DefineConstants Condition="$([MSBuild]::IsOSPlatform('Windows'))">$(DefineConstants);WINDOWS</DefineConstants>
+    <ApplicationIcon>ffgui.ico</ApplicationIcon>
+    <PublishDir Condition="'$(RuntimeIdentifier)' == 'win-x64'">publish-win\</PublishDir>
+    <PublishDir Condition="'$(RuntimeIdentifier)' == 'linux-x64'">publish-linux\</PublishDir>
+    <DebugType>none</DebugType>
   </PropertyGroup>
 
   <ItemGroup>
@@ -19,72 +23,22 @@
   </ItemGroup>
 
   <ItemGroup>
-    <None Update="lng.psv">
+    <None Update="lng.psv" CopyToOutputDirectory="PreserveNewest" />
+    <Content Include="templates\**\*" CopyToOutputDirectory="PreserveNewest" />
+
+    <None Include="ffgui.ico" Condition="$([MSBuild]::IsOSPlatform('Windows'))">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </None>
+
+    <None Include="setup.sh" Condition="$(RuntimeIdentifier.StartsWith('linux-'))" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 
-  <ItemGroup>
-    <Content Include="templates\**\*">
-      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
-    </Content>
-  </ItemGroup>
+  <Target Name="FinalizeAssets" AfterTargets="Build;Publish">
+    <Delete Condition="$([MSBuild]::IsOSPlatform('Windows')) AND '$(PublishDir)' != ''"
+            Files="$(PublishDir)ffgui.ico" />
 
-  <ItemGroup>
-    <Content Include=".cache\**\*">
-      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
-      <CopyToPublishDirectory>Never</CopyToPublishDirectory>
-    </Content>
-  </ItemGroup>
-
-  <ItemGroup Condition="$(RuntimeIdentifier.StartsWith('linux-'))">
-    <None Include="setup.sh">
-      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
-      <CopyToPublishDirectory>PreserveNewest</CopyToPublishDirectory>
-    </None>
-  </ItemGroup>
-
-  <PropertyGroup Condition="'$(RuntimeIdentifier)' == 'win-x64'">
-    <PublishDir>publish-win\</PublishDir>
-  </PropertyGroup>
-
-  <PropertyGroup Condition="'$(RuntimeIdentifier)' == 'osx-arm64'">
-    <PublishDir>publish-osx\</PublishDir>
-  </PropertyGroup>
-
-  <PropertyGroup Condition="'$(RuntimeIdentifier)' == 'linux-x64'">
-    <PublishDir>publish-linux\</PublishDir>
-  </PropertyGroup>
-
-  <Target Name="CopyAssets" AfterTargets="Build">
-    <Copy SourceFiles="ffgui.svg" DestinationFolder="$(OutputPath)" />
+    <Exec Condition="$(RuntimeIdentifier.StartsWith('linux-')) AND '$(PublishDir)' != ''"
+          Command="chmod +x $(PublishDir)setup.sh" />
   </Target>
-
-  <Target Name="FinalizeLinuxPublish" AfterTargets="Publish" Condition="$(RuntimeIdentifier.StartsWith('linux-'))">
-    <PropertyGroup>
-      <AppId>de.kyo.ffgui</AppId>
-    </PropertyGroup>
-
-    <Exec Command="chmod +x $(PublishDir)setup.sh" />
-
-    <Copy SourceFiles="ffgui.svg" DestinationFiles="$(PublishDir)$(AppId).svg" />
-
-    <Message Text="Linux deployment package finalized in $(PublishDir)" Importance="high" />
-  </Target>
-
-  <PropertyGroup Condition="$([MSBuild]::IsOSPlatform('Windows'))">
-    <ApplicationIcon>ffgui.ico</ApplicationIcon>
-  </PropertyGroup>
-
-  <ItemGroup Condition="$([MSBuild]::IsOSPlatform('Windows'))">
-    <None Include="ffgui.ico">
-      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
-    </None>
-  </ItemGroup>
-
-  <ItemGroup>
-    <Folder Include="src/Helpers/" />
-    <Folder Include="src/UI/Editors/TemplateEditor/" />
-  </ItemGroup>
 
 </Project>
