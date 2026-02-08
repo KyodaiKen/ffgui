@@ -5,7 +5,7 @@
 [![GTK](https://img.shields.io/badge/GUI-GTK4-orange.svg)](https://www.gtk.org/)
 [![FFmpeg](https://img.shields.io/badge/Engine-FFmpeg-green.svg)](https://ffmpeg.org/)
 
-A powerful, template-driven GTK4 frontend for FFmpeg, rewritten in C# for .NET 10. Designed for high-performance media transcoding with advanced batch job management.
+A powerful, template-driven media converter powered by GTK4 and FFmpeg, written in C# (.NET 10). Designed for high-performance media transcoding with advanced batch job management.
 
 **ffGUI** provides a granular interface for controlling individual streams, metadata, and dispositions while maintaining a streamlined workflow through a robust, reusable template system.
 
