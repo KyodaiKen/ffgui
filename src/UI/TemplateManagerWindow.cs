@@ -62,9 +62,37 @@ public class TemplateManagerWindow : Window
     {
         var header = new HeaderBar();
         _searchEntry = new SearchEntry { PlaceholderText = "Filter templates..." };
-        // Fix: Ensure we don't pass null to PopulateList
         _searchEntry.OnSearchChanged += (s, e) => PopulateList(_searchEntry.GetText() ?? "");
-        header.SetTitleWidget(_searchEntry);
+
+        header.PackStart(_searchEntry);
+
+        var btnNew = new MenuButton
+        {
+            IconName = "list-add-symbolic",
+            TooltipText = "Create New Template",
+            MarginStart = 12
+        };
+
+        if (btnNew.GetFirstChild() is Button internalButton)
+            internalButton.AddCssClass("suggested-action");
+
+        // Load the menu from the string we just added to Menus.cs
+        var builder = Builder.NewFromString(Menus.TemplateNewMenu, Menus.TemplateNewMenu.Length);
+
+        var menuModel = builder.GetObject("template-new-menu") as MenuModel ?? throw new Exception("Menu model not found");
+        btnNew.MenuModel = menuModel;
+
+        var actionGroup = new SimpleActionGroup();
+        // Fix: Follow JobRow's pattern for AddAction
+        AddAction(actionGroup, "new_transcoding", (a, p) => _createNewTemplate(new TranscodingTemplate()));
+        AddAction(actionGroup, "new_container", (a, p) => _createNewTemplate(new ContainerTemplate()));
+        AddAction(actionGroup, "new_filter", (a, p) => _createNewTemplate(new FilterTemplate()));
+
+        // Register the group under the prefix "tpl" (matching our XML)
+        InsertActionGroup("tpl", actionGroup);
+
+        header.PackStart(btnNew);
+
         SetTitlebar(header);
 
         var mainBox = new Box { Spacing = 8 };
@@ -117,31 +145,6 @@ public class TemplateManagerWindow : Window
             btnCancel.Label = "Cancel";
             footer.Append(_btnApply);
             _btnApply.OnClicked += (s, e) => _onApplyClicked();
-        }
-        else
-        {
-            var btnNew = new MenuButton
-            {
-                IconName = "list-add-symbolic",
-                TooltipText = "Create New Template"
-            };
-
-            // Load the menu from the string we just added to Menus.cs
-            var builder = Builder.NewFromString(Menus.TemplateNewMenu, Menus.TemplateNewMenu.Length);
-            
-            var menuModel = builder.GetObject("template-new-menu") as MenuModel ?? throw new Exception("Menu model not found");
-            btnNew.MenuModel = menuModel;
-
-            var actionGroup = new SimpleActionGroup();
-            // Fix: Follow JobRow's pattern for AddAction
-            AddAction(actionGroup, "new_transcoding", (a, p) => _createNewTemplate(new TranscodingTemplate()));
-            AddAction(actionGroup, "new_container", (a, p) => _createNewTemplate(new ContainerTemplate()));
-            AddAction(actionGroup, "new_filter", (a, p) => _createNewTemplate(new FilterTemplate()));
-
-            // Register the group under the prefix "tpl" (matching our XML)
-            InsertActionGroup("tpl", actionGroup);
-
-            footer.Append(btnNew);
         }
 
         mainBox.Append(footer);
