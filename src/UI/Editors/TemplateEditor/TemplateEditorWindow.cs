@@ -31,7 +31,7 @@ public class TemplateEditorWindow : Window
 
         BuildUI();
 
-        if (_mode == EditorMode.Edit) _populateTemplateData();
+        _populateTemplateData();
     }
 
     private void BuildUI()
