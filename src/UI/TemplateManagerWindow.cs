@@ -28,7 +28,6 @@ public class TemplateManagerWindow : Window
     private ListBox _lstTemplates = null!;
     private SearchEntry _searchEntry = null!;
     private Button _btnApply = null!;
-    private Button _btnClone = null!;
     private List<Template> _allTemplates = new();
 
     private readonly IDeserializer _yamlDeserializer;
@@ -143,12 +142,6 @@ public class TemplateManagerWindow : Window
             InsertActionGroup("tpl", actionGroup);
 
             footer.Append(btnNew);
-
-            _btnClone = Button.NewFromIconName("edit-copy-symbolic");
-            _btnClone.SetSensitive(false);
-            footer.Append(_btnClone);
-
-            _btnClone.OnClicked += (s, e) => _onCloneClicked();
         }
 
         mainBox.Append(footer);
@@ -280,28 +273,58 @@ public class TemplateManagerWindow : Window
 
         box.Append(new Label { Label_ = t.Name, Xalign = 0, Hexpand = true, Ellipsize = Pango.EllipsizeMode.End });
 
+        // --- Path Logic to detect Read-Only ---
+        // In your app, index 0 is typically the system path, index 1 is user path
+        bool isReadOnly = false;
+        if (_app.TemplatePaths.Length > 1)
+        {
+            var systemPath = _app.TemplatePaths[0];
+            // Check if the template file exists in the system directory
+            var expectedSystemFile = Path.Combine(systemPath, $"{t.Name}.yaml");
+            if (File.Exists(expectedSystemFile) && _app.PortableMode) isReadOnly = true;
+        }
+
         if (!_pickerMode)
         {
             var actionBox = new Box { Spacing = 4 };
 
-            var btnEdit = Button.NewFromIconName("document-edit-symbolic");
-            btnEdit.TooltipText = "Edit Template";
-            btnEdit.AddCssClass("flat");
-            btnEdit.OnClicked += (s, e) => _onEditClicked(t); // Pass template directly
-            actionBox.Append(btnEdit);
+            // 1. Move Clone Button into the row (Available for everyone)
+            var btnCloneRow = Button.NewFromIconName("edit-copy-symbolic");
+            btnCloneRow.TooltipText = "Clone Template";
+            btnCloneRow.AddCssClass("flat");
+            btnCloneRow.OnClicked += (s, e) => _onCloneClicked(t); // Modified to accept template
+            actionBox.Append(btnCloneRow);
 
-            var btnRename = Button.NewFromIconName("insert-text-symbolic");
-            btnRename.TooltipText = "Rename Template";
-            btnRename.AddCssClass("flat");
-            btnRename.OnClicked += (s, e) => _onRenameClicked(t);
-            actionBox.Append(btnRename);
+            // 2. Add Edit/Rename/Delete ONLY if not Read-Only
+            if (!isReadOnly)
+            {
+                var btnEdit = Button.NewFromIconName("document-edit-symbolic");
+                btnEdit.TooltipText = "Edit Template";
+                btnEdit.AddCssClass("flat");
+                btnEdit.OnClicked += (s, e) => _onEditClicked(t);
+                actionBox.Append(btnEdit);
 
-            var btnDelete = Button.NewFromIconName("user-trash-symbolic");
-            btnDelete.TooltipText = "Delete Template";
-            btnDelete.AddCssClass("flat");
-            btnDelete.AddCssClass("destructive-action");
-            btnDelete.OnClicked += (s, e) => _onDeleteClicked(t);
-            actionBox.Append(btnDelete);
+                var btnRename = Button.NewFromIconName("insert-text-symbolic");
+                btnRename.TooltipText = "Rename Template";
+                btnRename.AddCssClass("flat");
+                btnRename.OnClicked += (s, e) => _onRenameClicked(t);
+                actionBox.Append(btnRename);
+
+                var btnDelete = Button.NewFromIconName("user-trash-symbolic");
+                btnDelete.TooltipText = "Delete Template";
+                btnDelete.AddCssClass("flat");
+                btnDelete.AddCssClass("destructive-action");
+                btnDelete.OnClicked += (s, e) => _onDeleteClicked(t);
+                actionBox.Append(btnDelete);
+            }
+            else
+            {
+                // Optional: Add a lock icon for visual feedback
+                var lblLocked = Image.NewFromIconName("changes-prevent-symbolic");
+                lblLocked.TooltipText = "System Template (Read-Only)";
+                lblLocked.Opacity = 0.5;
+                actionBox.Append(lblLocked);
+            }
 
             box.Append(actionBox);
         }
@@ -314,7 +337,6 @@ public class TemplateManagerWindow : Window
     {
         bool hasSelection = _lstTemplates.GetSelectedRow() != null;
         if (_pickerMode) _btnApply.SetSensitive(hasSelection);
-        else _btnClone.SetSensitive(hasSelection);
     }
 
     private void AddAction(SimpleActionGroup group, string name, Action<SimpleAction, GLib.Variant?> callback)
@@ -459,13 +481,11 @@ public class TemplateManagerWindow : Window
         editor.Present();
     }
 
-    private void _onCloneClicked()
+    private void _onCloneClicked(Template? t = null)
     {
-        var selectedTemplate = _getSelectedTemplate();
+        var selectedTemplate = t ?? _getSelectedTemplate();
         if (selectedTemplate == null) return;
 
-        // Create a "Deep Copy" via serialization/deserialization 
-        // to ensure we don't modify the original reference
         var serializer = new SerializerBuilder().WithNamingConvention(PascalCaseNamingConvention.Instance).Build();
         var yaml = serializer.Serialize(selectedTemplate);
 
@@ -477,7 +497,7 @@ public class TemplateManagerWindow : Window
         if (clonedTemplate != null)
         {
             clonedTemplate.Description += " (Clone)";
-            _createNewTemplate(clonedTemplate); // Opens editor in New mode
+            _createNewTemplate(clonedTemplate);
         }
     }
 

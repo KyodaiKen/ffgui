@@ -30,6 +30,7 @@ public class FFGuiApp : Gtk.Application
     public string FFPlayPath = null!;
     public string FFMpegCachePath;
     public string[] TemplatePaths;
+    public bool PortableMode = false;
 
     // --- Application state ---
     public FFmpegCache Cache { get; private set; }
@@ -64,6 +65,7 @@ public class FFGuiApp : Gtk.Application
         if (isWritable)
         {
             WorkingDir = assemblyDir;
+            PortableMode = true;
 #if VERBOSE
             Console.WriteLine
             (
@@ -96,7 +98,7 @@ public class FFGuiApp : Gtk.Application
             Console.WriteLine
             (
                 $"""
-                {ApplicationId}: INFO - RRunning in installed mode since assy directory is NOT writable.
+                {ApplicationId}: INFO - Running in installed mode since assy directory is NOT writable.
                 {ApplicationId}: WorkingDir = '{WorkingDir}'
                 """
             );
