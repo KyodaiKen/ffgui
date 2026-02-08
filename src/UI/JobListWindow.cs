@@ -34,7 +34,7 @@ class JobListWindow : Window
         IconName = "de.kyo.ffgui";
 
         // Setup window
-        SetTitle("FFGui");
+        SetTitle("FFgui");
         SetDefaultSize(640, 480);
         SetSizeRequest(640, 480);
 
