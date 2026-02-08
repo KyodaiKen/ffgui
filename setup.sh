@@ -1,7 +1,7 @@
 #!/bin/bash
 
 # Configuration
-APP_NAME="FFGui"
+APP_NAME="FFgui"
 APP_ID="de.kyo.ffgui"
 BINARY_NAME="ffgui"
 INSTALL_DIR="/opt/$BINARY_NAME"
