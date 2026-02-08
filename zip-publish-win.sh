@@ -1,5 +1,5 @@
 #!/bin/bash
-TARGET_EXE="/mnt/nas/install/ffgui-win-x64-installer.exe"
+TARGET_EXE="/mnt/nas/install/ffgui-win-x64-sfx.exe"
 PUBLISH_DIR="/mnt/data/GIT/ffgui/publish-win"
 SFX_PATH="/mnt/data/GIT/ffgui/7z-win.sfx"
 
