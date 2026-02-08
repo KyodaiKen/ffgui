@@ -1,4 +1,4 @@
-# ffGUI
+# FFgui
 
 [![C#](https://img.shields.io/badge/c%23-%23239120.svg?logo=c-sharp&logoColor=white)](https://learn.microsoft.com/en-us/dotnet/csharp/)
 [![.NET 10](https://img.shields.io/badge/.NET-10-512bd4.svg?logo=dotnet&logoColor=white)](https://dotnet.microsoft.com/download/dotnet/10.0)
@@ -7,7 +7,7 @@
 
 A powerful, template-driven media converter powered by GTK4 and FFmpeg, written in C# (.NET 10). Designed for high-performance media transcoding with advanced batch job management.
 
-**ffGUI** provides a granular interface for controlling individual streams, metadata, and dispositions while maintaining a streamlined workflow through a robust, reusable template system.
+**FFgui** provides a granular interface for controlling individual streams, metadata, and dispositions while maintaining a streamlined workflow through a robust, reusable template system.
 
 ## ✨ Features
 
@@ -82,7 +82,7 @@ The project has been reorganized into a clean `src/` architecture:
 
 ## 📂 Data Management
 
-ffGUI is smart about where it saves your data:
+FFgui is smart about where it saves your data:
 
 * **Portable Mode:** If the application folder is writable, all `.yaml` settings and templates are stored locally.
 * **Installed Mode (Linux):** Settings are stored in `~/.local/share/de.kyo.ffgui/` and system templates are read from `/opt/ffgui/templates/`.
