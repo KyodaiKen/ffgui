@@ -174,28 +174,16 @@ public class TemplateEditorWindow : Window
 
     private void _onOkClicked(object? sender, EventArgs e)
     {
-        // 1. Validate Template Name
-        string tplName = _entFileName.GetText()?.Trim() ?? "";
-        if (string.IsNullOrWhiteSpace(tplName))
+        _syncUiToTemplate();
+
+        // Validate Template Name
+        if (string.IsNullOrWhiteSpace(_template.Name))
         {
             _showWarning("Template Name cannot be empty.");
             return;
         }
 
-        // 2. SYNC FIRST: Move data from UI widgets into the _template object
-        _syncUiToTemplate();
-
-        // 3. VALIDATE SECOND: Now _template.EncoderSettings.Parameters will have the data
-        if (!_hasParameters())
-        {
-            _showWarning("Cannot save an empty template. Please add at least one parameter or filter.");
-            return;
-        }
-
-        // 4. Finalize and Save
-        _template.Description = _txtDescription.Buffer?.Text ?? "";
-
-        _onSave?.Invoke(_template, _entFileName.GetText());
+        _onSave?.Invoke(_template, _template.Name);
         Close();
     }
 
@@ -409,7 +397,7 @@ public class TemplateEditorWindow : Window
             ((Button)btnCP).OnClicked += (s, e) =>
             {
                 _syncUiToTemplate();
-                var picker = new PickerWindow(_app.Cache, PickerType.Encoder, (obj) =>
+                var picker = new PickerWindow(_app.Cache, PickerType.Muxer, (obj) =>
                 {
                     if (obj is PickerWindow.PickerResult result && _template is ContainerTemplate ct)
                     {
@@ -535,6 +523,9 @@ public class TemplateEditorWindow : Window
 
     private void _syncUiToTemplate()
     {
+        _template.Name = _entFileName.GetText();
+        _template.Description = _txtDescription.Buffer?.Text ?? "";
+
         if (_template is TranscodingTemplate tt)
         {
             // Sync the Encoder string
