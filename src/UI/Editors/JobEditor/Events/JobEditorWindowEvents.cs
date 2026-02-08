@@ -1,6 +1,7 @@
 namespace FFGui.UI;
 
 using Gtk;
+using HarfBuzz;
 
 public partial class JobEditorWindow
 {
@@ -46,9 +47,6 @@ public partial class JobEditorWindow
                             break;
                     }
                     break;
-                case Entry ent:
-                    ent.OnChanged += (s, e) => _onEntryTextChanged(s, e, pageId, widget.Key);
-                    break;
                 case (string Id, string Label, Dictionary<string, object> Widgets)[] subPages:
                     foreach (var subPage in subPages)
                     {
@@ -80,24 +78,31 @@ public partial class JobEditorWindow
     private T? _getWidgetByPageAndPath<T>(string parentPageId, string subPageId, string widgetName) where T : Widget
     {
         var parentPage = _pages.FirstOrDefault(p => p.Id == parentPageId);
-        if (parentPage.Widgets == null) return null;
-
-        if (parentPage.Widgets.TryGetValue("Pages", out var pagesObj))
+        if (parentPage.Widgets is not null)
         {
-            var nestedPages = ((string Id, string Label, Dictionary<string, object> Widgets)[])pagesObj;
-            var subPage = nestedPages.FirstOrDefault(sp => sp.Id == subPageId);
 
-            if (subPage.Widgets != null && subPage.Widgets.TryGetValue(widgetName, out var widget))
+            if (parentPage.Widgets.TryGetValue("Pages", out var pagesObj))
             {
-                return widget as T;
+                var nestedPages = ((string Id, string Label, Dictionary<string, object> Widgets)[])pagesObj;
+                var subPage = nestedPages.FirstOrDefault(sp => sp.Id == subPageId);
+
+                if (subPage.Widgets != null && subPage.Widgets.TryGetValue(widgetName, out var widget))
+                {
+                    return widget as T;
+                }
+            }
+
+            // Fallback: If no sub-page was found, check if the widget exists directly on the parent
+            if (parentPage.Widgets.TryGetValue(widgetName, out var directWidget))
+            {
+                return directWidget as T;
             }
         }
 
-        // Fallback: If no sub-page was found, check if the widget exists directly on the parent
-        if (parentPage.Widgets.TryGetValue(widgetName, out var directWidget))
-        {
-            return directWidget as T;
-        }
+        // Fallback: Look in _widgets instead
+        if (_widgets.TryGetValue(widgetName, out var w))
+            return w as T;
+
         return null;
     }
 

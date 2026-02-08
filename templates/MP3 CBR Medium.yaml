@@ -3,7 +3,7 @@ EncoderSettings:
   Encoder: libmp3lame
   Parameters:
     compression_level: 0
-    cutoff: 17000
+    cutoff: 18000
     b: 192000
   UsesComplexFilters: false
   Filters:

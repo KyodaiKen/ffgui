@@ -200,7 +200,7 @@ public partial class JobEditorWindow : Window
         // Fill Entry fields
         _getWidgetByPageAndPath<Entry>("", "entJobName")?.SetText(_job.Name ?? "");
         _getWidgetByPageAndPath<Entry>("", "entOutputDir")?.SetText(_job.OutputDirectory ?? "");
-        _getWidgetByPageAndPath<Entry>("", "entOutputFileName")?.SetText(_job.OutputFileName ?? "");
+        _getWidgetByPageAndPath<Entry>("", "entOutputFn")?.SetText(_job.OutputFileName ?? "");
 
         // Set the Container Format Entry
         var entContainer = _getWidgetByPageAndPath<Entry>("pgContainer", "entCSContainerFormat");

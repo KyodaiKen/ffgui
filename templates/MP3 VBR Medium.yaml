@@ -4,7 +4,7 @@ EncoderSettings:
   Parameters:
     q: 2
     compression_level: 0
-    cutoff: 17000
+    cutoff: 18000
   UsesComplexFilters: false
   Filters:
   - FilterName: aresample

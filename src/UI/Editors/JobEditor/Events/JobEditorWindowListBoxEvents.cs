@@ -100,7 +100,7 @@ public partial class JobEditorWindow
 
     private void _saveStreamSetupUI(Job.Source.Stream stream)
     {
-        // 1. Encoder Tab
+        // Encoder Tab
         var entEncoder = _getWidgetByPageAndPath<Entry>("pgStreams", "pgStreamEncoder", "entEncoder");
         if (entEncoder != null) stream.EncoderSettings.Encoder = entEncoder.GetText();
 
@@ -108,7 +108,7 @@ public partial class JobEditorWindow
         // We pass ignoreLock: true because we want to force the read even if UI flags are set
         _syncEncoderParamsToJob(ignoreLock: true);
 
-        // 2. Filters Tab
+        // Filters Tab
         var ddFilterMode = _getWidgetByPageAndPath<DropDown>("pgStreams", "pgStreamFilters", "ddFilterMode");
         if (ddFilterMode != null)
         {
@@ -117,7 +117,7 @@ public partial class JobEditorWindow
         // Note: Filter list is usually managed by Add/Remove buttons directly, 
         // so we don't scrape the list here unless you allow inline editing of the list items directly.
 
-        // 3. Trim Tab
+        // Trim Tab
         var entTrimStart = _getWidgetByPageAndPath<Entry>("pgStreams", "pgStreamTrim", "entTrimStart");
         if (entTrimStart != null) stream.Trim.Start = entTrimStart.GetText();
 
@@ -127,7 +127,7 @@ public partial class JobEditorWindow
         var entTrimEnd = _getWidgetByPageAndPath<Entry>("pgStreams", "pgStreamTrim", "entTrimEnd");
         if (entTrimEnd != null) stream.Trim.End = entTrimEnd.GetText();
 
-        // 4. Metadata Tab
+        // Metadata Tab
         var lbStreamMeta = _getWidgetByPageAndPath<ListBox>("pgStreams", "pgStreamMetadata", "lbMSMetadata");
         if (lbStreamMeta != null)
         {
@@ -135,7 +135,7 @@ public partial class JobEditorWindow
             SyncMetadata(lbStreamMeta, stream.Metadata);
         }
 
-        // 5. Parameters Tab
+        // Parameters Tab
         var entLanguage = _getWidgetByPageAndPath<Entry>("pgStreams", "pgStreamParameters", "entLanguage");
         if (entLanguage != null) stream.Language = entLanguage.GetText();
 

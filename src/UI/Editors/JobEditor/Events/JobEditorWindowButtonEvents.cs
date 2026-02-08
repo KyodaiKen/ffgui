@@ -25,6 +25,18 @@ public partial class JobEditorWindow
             {
                 case "applyButton":
                 case "createButton":
+                    // Sync main settings
+                    var entJobName = _getWidgetByPageAndPath<Entry>("", "entJobName");
+                    if (entJobName is not null)
+                        _job.Name = entJobName.Text_ ??= "";
+
+                    var entOutputDir = _getWidgetByPageAndPath<Entry>("", "entOutputDir");
+                    if (entOutputDir is not null)
+                        _job.OutputDirectory = entOutputDir.Text_ ??= "";
+
+                    var entOutputFn = _getWidgetByPageAndPath<Entry>("", "entOutputFn");
+                    if (entOutputFn is not null)
+                        _job.OutputFileName = entOutputFn.Text_ ??= "";
 
                     // Sync UI to data for currently editing stream
                     if (_selectedStream.f >= 0 && _selectedStream.s >= 0 && _job != null)
