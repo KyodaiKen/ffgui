@@ -281,7 +281,7 @@ public class TemplateManagerWindow : Window
             var systemPath = _app.TemplatePaths[0];
             // Check if the template file exists in the system directory
             var expectedSystemFile = Path.Combine(systemPath, $"{t.Name}.yaml");
-            if (File.Exists(expectedSystemFile) && _app.PortableMode) isReadOnly = true;
+            if (File.Exists(expectedSystemFile) && !_app.PortableMode) isReadOnly = true;
         }
 
         if (!_pickerMode)
