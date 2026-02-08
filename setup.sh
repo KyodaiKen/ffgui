@@ -141,8 +141,8 @@ EOF
 [Desktop Entry]
 Type=Application
 Name=$APP_NAME
-GenericName=Video Converter
-Comment=FFmpeg Graphical User Interface
+GenericName=Media Converter
+Comment=FFmpeg Media Converter Graphical User Interface
 Exec=$INSTALL_DIR/$BINARY_NAME
 Path=$INSTALL_DIR
 Icon=$APP_ID
