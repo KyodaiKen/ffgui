@@ -23,6 +23,63 @@ if [ "$EUID" -ne 0 ]; then
   exit 1
 fi
 
+# --- .NET Detection Logic ---
+
+check_dotnet() {
+    msg "Checking for .NET 10 runtime..."
+    
+    # Check if dotnet is in PATH and version starts with 10
+    if command -v dotnet >/dev/null 2>&1; then
+        local version=$(dotnet --version 2>/dev/null)
+        if [[ "$version" == 10.* ]]; then
+            msg ".NET $version found."
+            return 0
+        fi
+    fi
+
+    err ".NET 10 runtime not found."
+    read -p "Would you like to attempt to install the .NET 10 runtime now? (y/N) " confirm
+    if [[ $confirm != [yY] ]]; then
+        err "Installation aborted. .NET 10 runtime is required to run FFGui."
+        exit 1
+    fi
+
+    install_dotnet_dependencies
+}
+
+install_dotnet_dependencies() {
+    # Identify Package Manager
+    if command -v apt-get >/dev/null 2>&1; then
+        # Ubuntu, Linux Mint, Debian
+        msg "Detected APT-based system. Installing dotnet-runtime-10.0..."
+        apt-get update
+        apt-get install -y dotnet-runtime-10.0
+
+    elif command -v dnf >/dev/null 2>&1; then
+        # Fedora, Bazzite (Bazzite uses rpm-ostree, but dnf works in the container/layer)
+        msg "Detected DNF-based system. Installing dotnet-runtime-10.0..."
+        dnf install -y dotnet-runtime-10.0
+
+    elif command -v pacman >/dev/null 2>&1; then
+        # CachyOS, SteamDeck OS (Arch-based)
+        msg "Detected Arch-based system (CachyOS/SteamDeck)."
+        
+        # SteamDeck OS specific: Check if filesystem is locked
+        if command -v steamos-readonly >/dev/null 2>&1; then
+            err "SteamDeck detected. Ensure you have run 'steamos-readonly disable' if this fails."
+        fi
+        
+        # Note: In Arch, .NET is often in the Community repo or AUR
+        # The official Arch package name is 'dotnet-runtime' (versioned by the repo state)
+        # To specifically target 10 before it hits 'latest', use:
+        pacman -Sy --noconfirm dotnet-runtime-10.0 || pacman -Sy --noconfirm dotnet-runtime
+        
+    else
+        err "Could not determine package manager. Please install .NET 10 manually."
+        exit 1
+    fi
+}
+
 uninstall_app() {
     msg "Uninstalling $APP_NAME..."
 
@@ -39,6 +96,7 @@ uninstall_app() {
 
 install_app() {
     msg "Installing $APP_NAME to $INSTALL_DIR..."
+    check_dotnet
 
     # 1. Create directory structure
     mkdir -p "$INSTALL_DIR"
