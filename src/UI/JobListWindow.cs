@@ -512,7 +512,8 @@ class JobListWindow : Window
 
     private void OnAbout(SimpleAction action, Variant? parameter)
     {
-
+        var aboutWin = new AboutWindow(_app, this);
+        aboutWin.Present();
     }
 
     private void OnQuit(SimpleAction action, Variant? parameter)
