@@ -24,7 +24,7 @@ public static class FFmpegCmdCompiler
         { "attachment", "t" }
     };
 
-    public static string[] CompileFFmpegCmd(this Job job, bool forPreview = false)
+    public static string[] CompileFFmpegCmd(this Job job, FFmpegCache ffmpegCache, bool forPreview = false)
     {
         var cmd = new List<string> { "-y" };
 
@@ -155,7 +155,7 @@ public static class FFmpegCmdCompiler
         {
             cmd.AddRange(new[] { "-progress", "pipe:1" });
 
-            // Multiplexer Fallback
+            // Multiplexer
             string muxer = job.Multiplexer;
             if (string.IsNullOrEmpty(muxer) && job.Sources.Count > 0)
                 muxer = job.Sources[0].Demuxer;
@@ -176,7 +176,7 @@ public static class FFmpegCmdCompiler
             }
 
             // Path Fallback & File Resolution
-            string resolvedPath = ResolveOutputPath(job, muxer);
+            string resolvedPath = ResolveOutputPath(job, ffmpegCache, muxer);
             if (!string.IsNullOrEmpty(resolvedPath))
             {
                 cmd.Add(resolvedPath);
@@ -186,7 +186,7 @@ public static class FFmpegCmdCompiler
         return cmd.ToArray();
     }
 
-    private static string ResolveOutputPath(Job job, string muxer)
+    private static string ResolveOutputPath(Job job, FFmpegCache ffmpegCache, string muxer)
     {
         if (job.Sources.Count == 0) return "";
 
@@ -206,7 +206,7 @@ public static class FFmpegCmdCompiler
             // extension = format?.FileExtensions?.FirstOrDefault() ?? "";
 
             // Placeholder: Replace with your actual cache access
-            extension = ".mp4"; // Defaulting for example
+            extension = ffmpegCache.Formats[muxer].FileExtensions[0];
         }
 
         if (string.IsNullOrEmpty(fileName))

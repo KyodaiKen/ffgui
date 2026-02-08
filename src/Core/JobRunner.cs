@@ -95,7 +95,7 @@ public class JobRunner
         OnJobStarted?.Invoke(id, job);
 
         // Build command with progress reporting redirected to stdout
-        var args = job.CompileFFmpegCmd().ToList();
+        var args = job.CompileFFmpegCmd(_app.Cache).ToList();
         args.Add("-progress");
         args.Add("pipe:1");
         args.Add("-nostats"); // Disable standard noisy stats to make parsing pipe:1 cleaner
