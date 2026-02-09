@@ -244,6 +244,7 @@ public class JobRunner
 
                 string speed = buffer.GetValueOrDefault("speed", "0x");
                 string fps = buffer.GetValueOrDefault("fps", "0");
+                string bitrate = buffer.GetValueOrDefault("bitrate", "0");
                 // --- ETA CALCULATION ---
                 string eta = "Calculating...";
 
@@ -260,7 +261,7 @@ public class JobRunner
                     speedFormatted = $"{Math.Round(velocity, 2):0.00}x  ";
                 }
 
-                string info = $"{Math.Round(pct * 100, 2):0.00}%  {fps} fps  {speedFormatted}{eta} left";
+                string info = $"{Math.Round(pct * 100, 2):0.00}%  {bitrate}  {fps} fps  {speedFormatted}{eta} left";
 
                 OnJobProgressUpdated?.Invoke(id, job, info, pct);
             }
