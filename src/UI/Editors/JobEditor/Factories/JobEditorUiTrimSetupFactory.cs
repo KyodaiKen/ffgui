@@ -9,10 +9,10 @@ public static partial class JobEditorUiFactory
     {
         widgets = new();
 
-        // 1. Create the container for the content
+        // Create the container for the content
         var rootBox = BuildBox();
 
-        // 2. Setup the Grid for Label/Entry pairs
+        // Setup the Grid for Label/Entry pairs
         var grid = new Grid() { ColumnSpacing = 8, RowSpacing = 8 };
         rootBox.Append(grid);
 
@@ -32,7 +32,7 @@ public static partial class JobEditorUiFactory
         AddTrimRow("Duration / Length:", trimSettings.Length, "entTrimLength", 1, widgets);
         AddTrimRow("End Time:", trimSettings.End, "entTrimEnd", 2, widgets);
 
-        // 3. Optional: Add an info label about format
+        // Optional: Add an info label about format
         var lblInfo = new Label()
         {
             Label_ = "<i>Use formats: HH:MM:SS, HH:MM:SS.mms, or total seconds.</i>",

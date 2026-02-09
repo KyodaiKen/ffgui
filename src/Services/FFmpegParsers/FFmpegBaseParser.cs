@@ -52,7 +52,7 @@ public abstract class FFmpegBaseParser
         {
             if (SectionRegex.IsMatch(line)) continue;
 
-            // 1. Try Parameter Match (Starts with dash)
+            // Try Parameter Match (Starts with dash)
             var pMatch = ParamRegex.Match(line);
             if (pMatch.Success)
             {
@@ -75,7 +75,7 @@ public abstract class FFmpegBaseParser
                 continue;
             }
 
-            // 2. Try Option Match (No dash, indented)
+            // Try Option Match (No dash, indented)
             var oMatch = OptionRegex.Match(line);
             if (oMatch.Success && currentParamKey != null)
             {
@@ -126,7 +126,6 @@ public abstract class FFmpegBaseParser
                 return new FFmpegValueDouble(d != 0 ? n / d : 0);
         }
 
-        // Fixed TryParse Overloads to avoid CS1503/CS1615/CS1620
         if (long.TryParse(val, NumberStyles.Integer, CultureInfo.InvariantCulture, out long l)) 
             return new FFmpegValueLong(l);
             

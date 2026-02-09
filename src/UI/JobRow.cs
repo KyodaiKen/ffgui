@@ -73,6 +73,7 @@ public class JobRow
         AddAction("job_setup", (a, p) => _onJobEdit());
         AddAction("remove_job", (a, p) => _onJobRemove());
         AddAction("job_clone", (a, p) => _onJobClone());
+        AddAction("view_error", (a, p) => _onViewError());
         AddAction("reset_job_status", (a, p) => _onResetJobStatus());
 
         var listWindow = _parent as JobListWindow;

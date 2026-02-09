@@ -65,7 +65,7 @@ public static class FFmpegTimeParser
 
         input = input.Trim().ToLowerInvariant();
 
-        // 1. Handle Sexagesimal format: [HOURS:]MINUTES:SECONDS[.m...]
+        // Handle Sexagesimal format: [HOURS:]MINUTES:SECONDS[.m...]
         // Example: 12:03:45 or 03:45
         if (input.Contains(':'))
         {
@@ -95,7 +95,7 @@ public static class FFmpegTimeParser
             catch { return false; }
         }
 
-        // 2. Handle Seconds format with optional units: S+[.m...][unit]
+        // Handle Seconds format with optional units: S+[.m...][unit]
         // Units: 's' (default), 'ms', 'us' / 'μs'
         var match = Regex.Match(input, @"^(?<value>-?[\d.]+)(?<unit>ms|us|μs|s)?$");
         if (match.Success)

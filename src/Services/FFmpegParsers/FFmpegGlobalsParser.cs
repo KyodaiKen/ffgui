@@ -47,7 +47,7 @@ public class FFmpegGlobalsParser : FFmpegBaseParser
         {
             string line = lines[i];
             
-            // 1. Header Detection (Python: endswith(":") or "AVOptions" in line)
+            // Header Detection (Python: endswith(":") or "AVOptions" in line)
             if (line.TrimEnd().EndsWith(":") || line.Contains("AVOptions"))
             {
                 string header = line.Trim().TrimEnd(':');
@@ -60,7 +60,7 @@ public class FFmpegGlobalsParser : FFmpegBaseParser
 
             onProgress?.Invoke("Global Options", (double)i / lines.Length);
 
-            // 2. Handle AVOptions (Complex parameters with nested choices)
+            // Handle AVOptions (Complex parameters with nested choices)
             if (currentSection == "av_options")
             {
                 var pMatch = ParamRegex.Match(line);
@@ -103,7 +103,7 @@ public class FFmpegGlobalsParser : FFmpegBaseParser
             }
             else
             {
-                // 3. Handle Standard Global Options (Python: std_pattern)
+                // Handle Standard Global Options (Python: std_pattern)
                 var stdMatch = StdParamRegex.Match(line);
                 if (stdMatch.Success)
                 {

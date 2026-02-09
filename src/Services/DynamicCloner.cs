@@ -13,10 +13,10 @@ public static class DynamicCloner
         if (obj == null) return default;
         Type type = obj.GetType();
 
-        // 1. Simple Types
+        // Simple Types
         if (type.IsValueType || type == typeof(string)) return obj;
 
-        // 2. Handle Arrays (Specifically fixes the string[] crash)
+        // Handle Arrays
         if (type.IsArray)
         {
             var sourceArray = (Array)(object)obj;
@@ -29,7 +29,7 @@ public static class DynamicCloner
             return (T?)(object)newArray;
         }
 
-        // 3. Handle Dictionaries
+        // Handle Dictionaries
         if (type.IsGenericType && type.GetGenericTypeDefinition() == typeof(Dictionary<,>))
         {
             IDictionary sourceDict = (IDictionary)obj;
@@ -44,7 +44,7 @@ public static class DynamicCloner
             return (T?)newDict;
         }
 
-        // 4. Handle Lists / Enumerable
+        // Handle Lists / Enumerable
         if (typeof(IEnumerable).IsAssignableFrom(type))
         {
             var underlyingType = type.GetGenericArguments().FirstOrDefault() ?? typeof(object);
@@ -61,7 +61,7 @@ public static class DynamicCloner
             return (T?)newList;
         }
 
-        // 5. Handle Complex Objects (Classes/Records)
+        // Handle Complex Objects (Classes/Records)
         object? clone = Activator.CreateInstance(type);
         if (clone == null) return default;
 

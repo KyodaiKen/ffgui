@@ -282,23 +282,23 @@ public partial class JobEditorWindow
                 switch (button)
                 {
                     case "btnESPickEncoder":
-                        // 1. Safety Check: Ensure a stream is actually selected
+                        // Safety Check: Make sure a stream is actually selected
                         if (_selectedStream.f < 0 || _selectedStream.s < 0) return;
 
 
                         var picker = new PickerWindow(_app.Cache, PickerType.Encoder, (obj) =>
                         {
-                            // 2. Cast the object to PickerResult to access Key and Data
+                            // Cast the object to PickerResult to access Key and Data
                             if (obj is PickerWindow.PickerResult result)
                             {
                                 var codecName = result.Key;
 #if VERBOSE
                                 Console.WriteLine($"Picked: {codecName}");
 #endif
-                                // 3. Update the Model immediately
+                                // Update the Model immediately
                                 selectedStream.EncoderSettings.Encoder = codecName;
 
-                                // 4. Update the UI on the next Idle cycle
+                                // Update the UI on the next Idle cycle
                                 GLib.Functions.IdleAdd(0, () =>
                                 {
                                     _updateStreamSetupUI(selectedStream);
@@ -317,21 +317,31 @@ public partial class JobEditorWindow
                         break;
                     case "btnESAddParam":
 
-                        // 1. Identify which encoder is currently selected for this stream
+                        // Identify which encoder is currently selected for this stream
                         var codecName = selectedStream.EncoderSettings.Encoder;
 
-                        if (string.IsNullOrEmpty(codecName) || !_app.Cache.Codecs.ContainsKey(codecName))
+                        if (string.IsNullOrEmpty(codecName))
                         {
-                            // Optional: Show a warning that an encoder must be selected first
+                            var dialog = new MessageDialog()
+                            {
+                                TransientFor = this,
+                                Modal = true,
+                                DestroyWithParent = true,
+                                MessageType = MessageType.Warning,
+                                Text = "Make sure to select a codec first. Copy is also okay."
+                            };
+                            dialog.AddButton("OK", 0);
+                            dialog.OnResponse += (s, e) => dialog.Destroy();
+                            dialog.Present();
                             return;
                         }
 
-                        var codecSchema = _app.Cache.Codecs[codecName];
+                        _app.Cache.Codecs.TryGetValue(codecName, out var codecSchema);
 
-                        // 2. Open PickerWindow with the codec as context
+                        // Open PickerWindow with the codec as context
                         var paramPicker = new PickerWindow(_app.Cache, PickerType.Parameter, (obj) =>
                         {
-                            // FIX: Ensure we handle the PickerResult structure
+                            // Make sure we handle the PickerResult structure
                             if (obj is PickerWindow.PickerResult result && result.Data is FFmpegParameter paramSchema)
                             {
                                 GLib.Functions.IdleAdd(0, () =>
@@ -350,7 +360,7 @@ public partial class JobEditorWindow
                                     lbEP.Append(newRow);
                                     newRow.Show();
 
-                                    // Bypass the lock to ensure this manual add is saved immediately
+                                    // Bypass the lock to make sure this manual add is saved immediately
                                     _syncEncoderParamsToJob(ignoreLock: true);
 
                                     return false;
@@ -373,7 +383,7 @@ public partial class JobEditorWindow
                 {
                     case "btnFSLoadTemplate":
                         if (selectedStream is not null)
-                            TemplateApplier.LoadEncoderTemplate(this, _app, selectedStream.EncoderSettings, selectedStream.Type,
+                            TemplateApplier.LoadFilterTemplate(this, _app, selectedStream.EncoderSettings, selectedStream.Type,
                                 () => _updateStreamSetupUI(selectedStream));
                         break;
                     case "btnFSAddFilter":
@@ -383,17 +393,17 @@ public partial class JobEditorWindow
                             {
                                 var filterName = result.Key;
 
-                                // 1. Create the new filter settings object
+                                // Create the new filter settings object
                                 var newFilter = new EncoderSettings.FilterSettings
                                 {
                                     FilterName = filterName,
                                     Parameters = new Dictionary<string, object>()
                                 };
 
-                                // 2. Add to the Job Model
+                                // Add to the Job Model
                                 currentStream.EncoderSettings.Filters.Add(newFilter);
 
-                                // 3. Immediately open the Parameter Editor to invite user input
+                                // Immediately open the Parameter Editor to invite user input
                                 if (_app.Cache.Filters.TryGetValue(filterName, out var schema))
                                 {
                                     var editor = new FilterParameterEditor(_app, this, newFilter, schema, () =>
@@ -404,7 +414,7 @@ public partial class JobEditorWindow
                                     editor.Present();
                                 }
 
-                                // 4. Refresh the background list so the user sees it was added
+                                // Refresh the background list so the user sees it was added
                                 _updateStreamSetupUI(currentStream);
                             }
                         }, streamType: selectedStream.Type);
@@ -426,16 +436,16 @@ public partial class JobEditorWindow
                             {
                                 var newMuxer = result.Key;
 
-                                // 1. Check if the container actually changed
+                                // Check if the container actually changed
                                 if (_job.Multiplexer != newMuxer)
                                 {
-                                    // 2. Update the Model
+                                    // Update the Model
                                     _job.Multiplexer = newMuxer;
 
-                                    // 3. Reset Muxer Parameters (old parameters won't work with new muxer)
+                                    // Reset Muxer Parameters (old parameters won't work with new muxer)
                                     _job.MuxerParameters?.Clear();
 
-                                    // 4. Update UI
+                                    // Update UI
                                     GLib.Functions.IdleAdd(0, () =>
                                     {
                                         // Update the main container label/entry
@@ -463,7 +473,7 @@ public partial class JobEditorWindow
                             TemplateApplier.LoadContainerTemplate(this, _app, _job, _job.Multiplexer, _populateInitialData);
                         break;
                     case "btnCSAddMuxParam":
-                        // 1. Identify the current muxer (format)
+                        // Identify the current muxer (format)
                         var muxerName = _job.Multiplexer;
                         if (string.IsNullOrEmpty(muxerName) || !_app.Cache.Formats.ContainsKey(muxerName))
                         {
@@ -487,7 +497,7 @@ public partial class JobEditorWindow
 
                         var muxerSchema = _app.Cache.Formats[muxerName];
 
-                        // 2. Open PickerWindow with the Format as context
+                        // Open PickerWindow with the Format as context
                         var mParamPicker = new PickerWindow(_app.Cache, PickerType.Parameter, (obj) =>
                         {
                             if (obj is PickerWindow.PickerResult result && result.Data is FFmpegParameter paramSchema)
@@ -658,21 +668,20 @@ public partial class JobEditorWindow
 #if VERBOSE
         Console.WriteLine($"Attempting to sync ... (Locked={_isUpdatingUi})");
 #endif
-        // 1. Check the gatekeeper (unless explicitly ignored)
+        // Check the gatekeeper (unless explicitly ignored)
         if (!ignoreLock && _isUpdatingUi) return;
 
         var lbEP = _getWidgetByPageAndPath<ListBox>("pgStreams", "pgStreamEncoder", "lbESEncoderParams");
         if (lbEP == null) return;
 
-        // 2. Safely get the current stream
+        // Safely get the current stream
         var currentStream = _job.Sources[_selectedStream.f].Streams[_selectedStream.s];
 
-        // 3. Fix the Null Reference Warning
-        // Ensure the dictionary exists before we try to use it
+        // Make sure the dictionary exists before we try to use it
         if (currentStream.EncoderSettings.Parameters == null)
             currentStream.EncoderSettings.Parameters = new Dictionary<string, object>();
 
-        // 4. Collect rows into a list first (prevents collection-modified issues)
+        // Collect rows into a list first (prevents collection-modified issues)
         var activeRows = new List<ParameterRow>();
         var child = lbEP.GetFirstChild();
         while (child != null)
@@ -681,7 +690,7 @@ public partial class JobEditorWindow
             child = child.GetNextSibling();
         }
 
-        // 5. Update the model
+        // Update the model
         currentStream.EncoderSettings.Parameters.Clear();
         foreach (var row in activeRows)
         {
@@ -703,7 +712,7 @@ public partial class JobEditorWindow
         var lbMP = _getWidgetByPageAndPath<ListBox>("pgContainer", "lbCSMuxerParams");
         if (lbMP == null) return;
 
-        // Ensure the dictionary exists
+        // Makes sure the dictionary exists
         _job.MuxerParameters ??= new Dictionary<string, object>();
         _job.MuxerParameters.Clear();
 

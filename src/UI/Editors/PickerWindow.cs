@@ -150,7 +150,7 @@ public class PickerWindow : Window
     {
         _allItems.Clear();
 
-        // 1. --- Load context-specific parameters ---
+        // --- Load context-specific parameters ---
         if (_contextData is FFmpegFilter flt)
         {
             foreach (var (k, v) in flt.Parameters)
@@ -169,7 +169,7 @@ public class PickerWindow : Window
                 _allItems.Add(new PickerItem(k, v.Description ?? "", new PickerResult(k, v), IsGlobal: false));
         }
 
-        // 2. --- Load Global Parameters (Stream Specific) ---
+        // --- Load Global Parameters (Stream Specific) ---
         var globalsToAdd = new List<KeyValuePair<string, FFmpegParameter>>();
 
         // If we are looking at a Format, we usually only care about PerStream globals 
@@ -189,7 +189,7 @@ public class PickerWindow : Window
                 _allItems.Add(new PickerItem(k, v.Description ?? "Global Option", new PickerResult(k, v), IsGlobal: true));
         }
 
-        // 3. --- Apply Sorting ---
+        // --- Apply Sorting ---
         _allItems = [.. _allItems
         .OrderBy(i => i.IsGlobal) // Format/Codec specific first
         .ThenBy(i => i.Key)];
@@ -242,7 +242,7 @@ public class PickerWindow : Window
             if (item.IsGlobal)
             {
                 var badge = new Label { Label_ = "Global" };
-                badge.AddCssClass("badge"); // Ensure this is defined in your CSS
+                badge.AddCssClass("badge"); // Makes sure this is defined in your CSS
                 badge.AddCssClass("dim-label");
                 badge.SetOpacity(0.5);
                 titleBox.Append(badge);

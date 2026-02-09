@@ -89,7 +89,7 @@ public static partial class JobEditorUiFactory
 
                 return outerBox;
             case "pgContainer":
-                // Using a Grid with ColumnHomogeneous ensures a perfect 50/50 split
+                // Using a Grid with ColumnHomogeneous makes a perfect 50/50 split
                 var gridContainerMain = new Grid()
                 {
                     ColumnSpacing = 24,

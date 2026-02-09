@@ -42,7 +42,7 @@ public class JobRunner
         IsRunning = true;
         OnQueueStarted?.Invoke();
 
-        // 1. Filter jobs to run
+        // Filter jobs to run
         var jobsToRun = _app.Jobs
             .Where(kv => !retryFailedOnly || kv.Value.Status == Job.JobStatus.Failed)
             .ToList();
@@ -54,7 +54,7 @@ public class JobRunner
             return;
         }
 
-        // 2. Organize by Parallel Groups
+        // Organize by Parallel Groups
         // Group 0 = Sequential (Each job is its own batch)
         // Group > 0 = Parallel (All jobs in that group run at once)
         var sequentialJobs = jobsToRun.Where(j => j.Value.ParallelGroup == 0).OrderBy(j => j.Key);
@@ -173,7 +173,7 @@ public class JobRunner
         }
         finally
         {
-            // REMOVE FROM LIST: Ensure we clean up so Stop() doesn't try to close dead processes
+            // REMOVE FROM LIST: Make sure we clean up so Stop() doesn't try to close dead processes
             lock (_lock)
             {
                 _activeProcesses.Remove(process);

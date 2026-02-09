@@ -28,7 +28,7 @@ A powerful, template-driven media converter powered by GTK4 and FFmpeg, written 
 * **[.NET 10 SDK](https://dotnet.microsoft.com/download/dotnet/10.0)**
 * **GTK4 Libraries:**
     * **Linux:** `libgtk-4-dev` (e.g., `sudo apt install libgtk-4-dev` on Debian/Ubuntu).
-    * **Windows:** Ensure GTK4 DLLs are in your PATH or the application folder.
+    * **Windows:** Make sure GTK4 DLLs are in your PATH or the application folder.
 * **FFmpeg:** Must be accessible in your system PATH or configured manually in the application settings.
 
 > **Note:** The first launch performs a full introspection of your FFmpeg capabilities to build a feature cache. This may take 10-30 seconds depending on your hardware and antivirus.

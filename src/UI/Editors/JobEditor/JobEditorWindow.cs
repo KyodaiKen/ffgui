@@ -306,11 +306,11 @@ public partial class JobEditorWindow : Window
         var lb = _getStreamListBox();
         if (lb == null || _job == null) return;
 
-        // 1. Clear existing items
+        // Clear existing items
         while (lb.GetFirstChild() is Widget child)
             lb.Remove(child);
 
-        // 2. Rebuild the list
+        // Rebuild the list
         for (int i = 0; i < _job.Sources.Count; i++)
         {
             var source = _job.Sources[i];

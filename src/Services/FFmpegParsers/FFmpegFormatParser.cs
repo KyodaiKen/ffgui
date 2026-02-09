@@ -62,7 +62,7 @@ public class FFmpegFormatParser : FFmpegBaseParser
         for (int i = 0; i < keys.Count; i++)
         {
             var key = keys[i];
-            // UPDATE UI HERE: This ensures the user sees movement for every format probed
+            // UPDATE UI HERE: This makes sure the user sees movement for every format probed
             onProgress?.Invoke(key, (double)i / keys.Count);
 
             var fmt = formats[key];

@@ -9,10 +9,10 @@ public static partial class JobEditorUiFactory
     {
         widgets = new();
 
-        // 1. The root container (Vertical Box)
+        // The root container (Vertical Box)
         var rootBox = BuildBox();
 
-        // 2. The Fixed Grid for the top controls
+        // The Fixed Grid for the top controls
         var topGrid = new Grid() { ColumnSpacing = 8, RowSpacing = 8 };
         rootBox.Append(topGrid);
 
@@ -46,7 +46,7 @@ public static partial class JobEditorUiFactory
         topGrid.Attach(btnESAddParam, 1, 1, 1, 1);
         widgets.Add(nameof(btnESAddParam), btnESAddParam);
 
-        // 3. The ScrolledWindow (Only for the ListBox)
+        // The ScrolledWindow (Only for the ListBox)
         var scroll = new ScrolledWindow()
         {
             Vexpand = true,

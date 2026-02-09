@@ -169,6 +169,7 @@ public class Job
                         streamDur = ParseTime(sDurProp.GetString());
 
                     s.Duration = (streamDur > TimeSpan.Zero ? streamDur : containerDuration).TotalSeconds;
+
                     s.Bitrate = ulong.TryParse(jsonStream.TryGetProperty("bit_rate", out var sbr) ? sbr.GetString() : "0", out ulong ubr) ? ubr : 0;
 
                     s.Metadata = new Dictionary<string, string>();
@@ -180,6 +181,11 @@ public class Job
                         {
                             s.Metadata[tag.Name] = tag.Value.GetString() ?? "";
                             if (tag.Name.ToLower() == "language") s.Language = tag.Value.GetString() ?? "und";
+
+                            //Matroska / WEBM stores it in tags
+                            if (s.Duration == 0 && tag.Name.ToLower() == "duration")
+                                if (Helpers.FFmpegTimeParser.TryParse(tag.Value.GetString() ?? "", out var dur))
+                                    s.Duration = dur.TotalSeconds;
                         }
                     }
 
@@ -198,6 +204,11 @@ public class Job
 
             if (format.TryGetProperty("duration", out var durProp))
                 containerDuration = ParseTime(durProp.GetString());
+
+            // Handle single stream duration
+            if (newSource.Streams.Count == 1 && newSource.Streams[0].Duration == 0 && containerDuration.TotalSeconds != 0)
+                newSource.Streams[0].Duration = containerDuration.TotalSeconds;
+
             newSource.Format = (format.TryGetProperty("format_name", out var fmtnm) ? fmtnm.GetString() ?? "" : "").Split(",");
             newSource.FormatDescription = format.TryGetProperty("format_long_name", out var fmtln) ? fmtln.GetString() ?? "" : "";
             newSource.Demuxer = newSource.Format[0];
@@ -211,6 +222,13 @@ public class Job
                     string tagValue = tag.Value.GetString() ?? "";
                     newSource.Metadata[tag.Name] = tagValue;
 
+                    // Handle duration in tags (Often Matroska)
+                    if (tag.Name.ToLower() == "duration")
+                        if (containerDuration.TotalSeconds == 0)
+                            if (Helpers.FFmpegTimeParser.TryParse(tag.Value.GetString() ?? "", out containerDuration))
+                                if (newSource.Streams.Count == 1 && newSource.Streams[0].Duration == 0 && containerDuration.TotalSeconds != 0)
+                                    newSource.Streams[0].Duration = containerDuration.TotalSeconds;
+
                     // Handle bundled demuxers
                     switch (newSource.Demuxer)
                     {
@@ -220,13 +238,13 @@ public class Job
                             {
                                 newSource.Demuxer = tagValue.Trim().ToLower() switch
                                 {
-                                    "isom" or "mp41" or "mp42"  => "mp4",
-                                    "qt"                        => "mov",
-                                    "m4a" or "m4b" or "m4p"     => "m4a",
-                                    "3gp4" or "3gp5" or "3gp6"  => "3gp",
-                                    "3g2a" or "3g2"             => "3g2",
-                                    "mjp2"                      => "mj2",
-                                    _                           => newSource.Demuxer
+                                    "isom" or "mp41" or "mp42" => "mp4",
+                                    "qt" => "mov",
+                                    "m4a" or "m4b" or "m4p" => "m4a",
+                                    "3gp4" or "3gp5" or "3gp6" => "3gp",
+                                    "3g2a" or "3g2" => "3g2",
+                                    "mjp2" => "mj2",
+                                    _ => newSource.Demuxer
                                 };
                             }
                             break;
@@ -257,7 +275,7 @@ public class Job
     /// </summary>
     public async Task AddSourceFilesAsync(List<string> fileNames)
     {
-        // 1. Race condition check
+        // Race condition check
         if (IsCurrentlyProbing)
         {
             Console.WriteLine("Analysis already in progress. Ignoring request.");
@@ -275,7 +293,7 @@ public class Job
         ProgressWindow? progWin = null;
         bool isWindowShown = false;
 
-        // 2. Start the timer to show window after 2 seconds
+        // Start the timer to show window after 2 seconds
         var timerTask = Task.Delay(500, cts.Token).ContinueWith(t =>
         {
             if (t.IsCanceled) return;
@@ -294,7 +312,7 @@ public class Job
 
         try
         {
-            // 3. Run the probing loop in background
+            // Run the probing loop in background
             await Task.Run(() =>
             {
                 int total = fileNames.Count;
@@ -319,12 +337,10 @@ public class Job
                     {
                         var source = ProbeSingleFile(file, cts.Token);
 
-                        // Since we are inside Task.Run, we modify the Job instance directly.
-                        // Class reference semantics ensure this updates the UI's bound object.
                         Sources.Add(source);
-
-                        if (source.Streams.Count > 0 && source.Streams[0].Duration > TotalDuration)
-                            TotalDuration = source.Streams[0].Duration;
+                        foreach (var stream in source.Streams)
+                            if (stream.Duration > TotalDuration)
+                                TotalDuration = stream.Duration;
                     }
                     catch (Exception ex)
                     {
@@ -339,7 +355,7 @@ public class Job
         }
         finally
         {
-            // 4. Cleanup and reset the gatekeeper
+            // Cleanup and reset the gatekeeper
             cts.Cancel();
             IsCurrentlyProbing = false;
 

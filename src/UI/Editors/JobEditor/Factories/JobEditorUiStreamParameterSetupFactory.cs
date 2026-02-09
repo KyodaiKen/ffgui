@@ -8,10 +8,10 @@ public static partial class JobEditorUiFactory
     {
         widgets = new();
 
-        // 1. Root Container
+        // Root Container
         var rootBox = BuildBox();
 
-        // 2. Fixed Top Grid
+        // Fixed Top Grid
         var topGrid = new Grid() { ColumnSpacing = 8, RowSpacing = 8 };
         rootBox.Append(topGrid);
 

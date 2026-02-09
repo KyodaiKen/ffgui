@@ -66,7 +66,7 @@ install_dotnet_dependencies() {
         
         # SteamDeck OS specific: Check if filesystem is locked
         if command -v steamos-readonly >/dev/null 2>&1; then
-            err "SteamDeck detected. Ensure you have run 'steamos-readonly disable' if this fails."
+            err "SteamDeck detected. Make sure you have run 'steamos-readonly disable' if this fails."
         fi
         
         # Note: In Arch, .NET is often in the Community repo or AUR
@@ -98,17 +98,17 @@ install_app() {
     msg "Installing $APP_NAME to $INSTALL_DIR..."
     check_dotnet
 
-    # 1. Create directory structure
+    # Create directory structure
     mkdir -p "$INSTALL_DIR"
     mkdir -p "$ICON_DIR"
 
-    # 2. Copy files
+    # Copy files
     cp -rf ./* "$INSTALL_DIR/"
 
-    # 3. Set permissions on the application binary
+    # Set permissions on the application binary
     chmod +x "$INSTALL_DIR/$BINARY_NAME"
 
-    # 4. Handle Icon
+    # Handle Icon
 
     rm -f "$ICON_DIR/$ICON_NAME"
 
@@ -132,7 +132,7 @@ EOF
         chmod 644 "$ICON_DIR/$ICON_NAME"
     fi
 
-    # 5. Generate Desktop Entry
+    # Generate Desktop Entry
     msg "Generating desktop entry..."
 
     rm -f "$DESKTOP_FILE"
@@ -151,10 +151,10 @@ Categories=AudioVideo;Video;
 StartupWMClass=$APP_ID
 EOF
 
-    # 6. CRITICAL: Set executable bit on the desktop file itself
+    # Set executable bit on the desktop file itself
     chmod +x "$DESKTOP_FILE"
 
-    # 7. Refresh system caches
+    # Refresh system caches
     update-desktop-database /usr/share/applications
     gtk-update-icon-cache -f -t /usr/share/icons/hicolor
 

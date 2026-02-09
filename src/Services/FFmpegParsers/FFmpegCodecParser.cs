@@ -79,7 +79,7 @@ public class FFmpegCodecParser : FFmpegBaseParser
             await ProbeHelp(name, codec, true);  // Probe Encoder
             await ProbeHelp(name, codec, false); // Probe Decoder
 
-            codecMap[name] = codec; // Ensure persistence if FFmpegCodec is a struct
+            codecMap[name] = codec; // Make sure persistence if FFmpegCodec is a struct
         }
 
         return codecMap;
@@ -105,7 +105,7 @@ public class FFmpegCodecParser : FFmpegBaseParser
             }
             else
             {
-                // FIX 3: MIX the contexts and merge options.
+                // MIX the contexts and merge options.
                 // If Encoder says 'Encoding: true' and Decoder says 'Decoding: true', the result is BOTH.
                 existingParam.Context.Encoding |= kvp.Value.Context.Encoding;
                 existingParam.Context.Decoding |= kvp.Value.Context.Decoding;

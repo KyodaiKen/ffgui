@@ -26,7 +26,11 @@ public static class FFmpegCmdCompiler
 
     public static string[] CompileFFmpegCmd(this Job job, FFmpegCache ffmpegCache, bool forPreview = false)
     {
-        var cmd = new List<string> { "-y" };
+        var cmd = new List<string>
+        {
+            "-y",
+            "-hide_banner"
+        };
 
         // --- PHASE 1: INPUTS & DELAY HANDLING ---
         var inputGroups = new List<InputGroup>();
@@ -200,14 +204,7 @@ public static class FFmpegCmdCompiler
         // Determine extension from muxer if file name is empty or lacks extension
         // Note: _app.Cache is assumed to be accessible in your context
         if (!string.IsNullOrEmpty(muxer))
-        {
-            // You'll need to ensure your App/Global state is reachable here
-            // var format = FFGui.App.Cache.Formats.GetValueOrDefault(muxer);
-            // extension = format?.FileExtensions?.FirstOrDefault() ?? "";
-
-            // Placeholder: Replace with your actual cache access
             extension = ffmpegCache.Formats[muxer].FileExtensions[0];
-        }
 
         if (string.IsNullOrEmpty(fileName))
         {

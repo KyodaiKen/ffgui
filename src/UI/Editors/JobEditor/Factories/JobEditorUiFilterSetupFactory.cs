@@ -45,7 +45,7 @@ public static partial class JobEditorUiFactory
         rootBox.Append(modeStack);
         widgets.Add("filterModeStack", modeStack);
 
-        // --- 1. SIMPLE MODE UI ---
+        // --- SIMPLE MODE UI ---
         var simpleBox = BuildBox(8, 0, 0, 0, 0, Orientation.Vertical);
 
         var simpleHeader = BuildBox(4, 0, 0, 0, 0, Orientation.Horizontal);
@@ -70,7 +70,7 @@ public static partial class JobEditorUiFactory
         simpleBox.Append(scrollSimple);
         widgets.Add("listSimpleFilters", lbFilters);
 
-        // --- 2. COMPLEX MODE UI ---
+        // --- COMPLEX MODE UI ---
         var complexBox = new Box() { Spacing = 8 };
         complexBox.SetOrientation(Orientation.Vertical);
 

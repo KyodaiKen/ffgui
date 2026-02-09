@@ -8,13 +8,13 @@ public partial class JobEditorWindow
     {
         var paths = new List<string>();
 
-        // 1. Get the raw pointer to the GdkFileList boxed record
+        // Get the raw pointer to the GdkFileList boxed record
         nint boxedPtr = args.Value.GetBoxed();
         if (boxedPtr == nint.Zero) return false;
 
         var listHandle = new GLib.Internal.SListUnownedHandle(boxedPtr);
 
-        // 3. Use Foreach with the proper Handle type
+        // Use Foreach with the proper Handle type
         GLib.Internal.SList.Foreach(listHandle, (filePtr, _) =>
         {
             if (filePtr != nint.Zero)

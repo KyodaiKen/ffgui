@@ -281,7 +281,7 @@ public class FFGuiApp : Gtk.Application
     {
         try
         {
-            // 1. Initialize the root Cache object
+            // Initialize the root Cache object
             var newCache = new FFmpegCache
             {
                 FFmpegVersionHeader = header,
@@ -293,29 +293,29 @@ public class FFGuiApp : Gtk.Application
                 Globals = new() 
             };
 
-            // 2. Parse Globals using your renamed FFmpegGlobalsParser
+            // Parse Globals using your renamed FFmpegGlobalsParser
             UpdateUI(win, "Analyzing Globals...", 0.05);
             var globalParser = new FFmpegGlobalsParser(FFMpegPath);
             // This now returns the struct directly as we designed in Step 2
             newCache.Globals = await globalParser.ParseGlobalsAsync();
 
-            // 3. Parse Pixel Formats
+            // Parse Pixel Formats
             UpdateUI(win, "Analyzing Pixels...", 0.01);
             newCache.PixelFormats = await new FFmpegPixelFormatParser(FFMpegPath).ParseAllAsync();
 
-            // 4. Parse Filters (with progress callback)
+            // Parse Filters (with progress callback)
             newCache.Filters = await new FFmpegFilterParser(FFMpegPath).ParseAllAsync((name, p) =>
                 UpdateUI(win, $"Filter: {name}", 0.01 + (p * 0.33)));
 
-            // 5. Parse Formats (with progress callback)
+            // Parse Formats (with progress callback)
             newCache.Formats = await new FFmpegFormatParser(FFMpegPath).ParseAllAsync((name, p) =>
                 UpdateUI(win, $"Format: {name}", 0.34 + (p * 0.33)));
 
-            // 6. Parse Codecs (the heavy lifting)
+            // Parse Codecs (the heavy lifting)
             newCache.Codecs = await new FFmpegCodecParser(FFMpegPath).ParseAllAsync((name, p) =>
                 UpdateUI(win, $"Codec: {name}", 0.67 + (p * 0.33)));
 
-            // 7. Finalize and Save to .cache
+            // Finalize and Save to .cache
             await newCache.SaveToFileAsync(FFMpegCachePath);
             this.Cache = newCache;
 
@@ -461,7 +461,7 @@ public class FFGuiApp : Gtk.Application
         //         {
         //             themeProvider.LoadFromPath(themePath);
 
-        //             // Use Priority 800 (User) to ensure it overrides Adwaita
+        //             // Use Priority 800 (User) to make sure it overrides Adwaita
         //             Gtk.StyleContext.AddProviderForDisplay(
         //                 display,
         //                 themeProvider,
@@ -488,7 +488,7 @@ public class FFGuiApp : Gtk.Application
             #streams_list row:hover {
                 background-color: transparent;
             }
-            /* Optional: ensure they don't look 'selected' either since mode is NONE */
+            /* Optional: Make sure they don't look 'selected' either since mode is NONE */
             #streams_list row:selected {
                 background-color: transparent;
             }
@@ -605,7 +605,7 @@ public class FFGuiApp : Gtk.Application
 // #if WINDOWS
 // #pragma warning disable CA1416
 //         css = @"
-//             /* 1. Reset the Adwaita circular backgrounds */
+//             /* Reset the Adwaita circular backgrounds */
 //             windowcontrols button {
 //                 border-radius: 0;
 //                 background-color: transparent;
@@ -617,7 +617,7 @@ public class FFGuiApp : Gtk.Application
 //                 min-height: 24px;
 //             }
 
-//             /* 2. Allow Breeze icons to show through */
+//             /* Allow Breeze icons to show through */
 //             windowcontrols button image {
 //                 background: none;
 //                 box-shadow: none;

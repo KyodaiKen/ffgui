@@ -189,11 +189,11 @@ public class TemplateEditorWindow : Window
 
     private void _populateFilterUiCommon(bool isComplex, List<EncoderSettings.FilterSettings> filters)
     {
-        // 1. Set DropDown Mode
+        // Set DropDown Mode
         if (_factoryWidgets.TryGetValue("ddFilterMode", out var ddObj) && ddObj is DropDown dd)
             dd.Selected = isComplex ? 1u : 0u;
 
-        // 2. Populate ListBox
+        // Populate ListBox
         if (_factoryWidgets.TryGetValue("listSimpleFilters", out var lbObj) && lbObj is ListBox lbFilters)
         {
             _clearListBox(lbFilters);
@@ -214,7 +214,7 @@ public class TemplateEditorWindow : Window
         // Populate Encoder Parameters List
         if (_template is TranscodingTemplate tt)
         {
-            // --- 1. Transcoding Params (Existing) ---
+            // --- Transcoding Params (Existing) ---
             if (_factoryWidgets.TryGetValue("entEncoder", out var entObj) && entObj is Entry entEncoder)
                 entEncoder.SetText(tt.EncoderSettings.Encoder);
 
@@ -237,8 +237,8 @@ public class TemplateEditorWindow : Window
                 }
             }
 
-            // --- 2. Filter Params (New for Transcoding) ---
-            // Ensure EncoderSettings.Filters is initialized
+            // --- Filter Params (New for Transcoding) ---
+            // Make sure EncoderSettings.Filters is initialized
             tt.EncoderSettings.Filters ??= [];
             _populateFilterUiCommon(tt.EncoderSettings.UsesComplexFilters, tt.EncoderSettings.Filters);
         }
@@ -276,7 +276,7 @@ public class TemplateEditorWindow : Window
 
     private void _syncParamsToTemplate()
     {
-        // 1. Handle Filter Logic (Shared)
+        // Handle Filter Logic (Shared)
         // We check if the UI elements exist, which implies we are on a page that supports filters
         if (_factoryWidgets.ContainsKey("listSimpleFilters"))
         {
@@ -317,8 +317,8 @@ public class TemplateEditorWindow : Window
             }
         }
 
-        // 2. Handle Parameters Logic (Transcoding & Container)
-        // (This part remains largely the same, just ensure it runs for TranscodingTemplate)
+        // Handle Parameters Logic (Transcoding & Container)
+        // (This part remains largely the same, just make sure it runs for TranscodingTemplate)
         if (_template is TranscodingTemplate ttParams)
         {
             // Sync Encoder Params
@@ -367,7 +367,7 @@ public class TemplateEditorWindow : Window
 
     private void _registerFactoryEvents()
     {
-        // --- 1. Encoder Template Events ---
+        // --- Encoder Template Events ---
         if (_factoryWidgets.TryGetValue("btnESPickEncoder", out var btnEP))
         {
             ((Button)btnEP).OnClicked += (s, e) =>
@@ -391,7 +391,7 @@ public class TemplateEditorWindow : Window
         if (_factoryWidgets.TryGetValue("btnESAddParam", out var btnEAdd))
             ((Button)btnEAdd).OnClicked += (s, e) => _openParamPicker();
 
-        // --- 2. Container Template Events ---
+        // --- Container Template Events ---
         if (_factoryWidgets.TryGetValue("btnCSSelectContainer", out var btnCP))
         {
             ((Button)btnCP).OnClicked += (s, e) =>
@@ -414,7 +414,7 @@ public class TemplateEditorWindow : Window
         if (_factoryWidgets.TryGetValue("btnCSAddMuxParam", out var btnCAdd))
             ((Button)btnCAdd).OnClicked += (s, e) => _openParamPicker();
 
-        // --- 3. Filter Events (Shared) ---
+        // --- Filter Events (Shared) ---
         if (_factoryWidgets.TryGetValue("btnFSAddFilter", out var btnFAdd))
         {
             ((Button)btnFAdd).OnClicked += (s, e) =>
@@ -459,12 +459,12 @@ public class TemplateEditorWindow : Window
         _syncUiToTemplate();
         if (_template is TranscodingTemplate tt)
         {
-            // 1. Sync the type from dropdown
+            // Sync the type from dropdown
             var selectedItem = _ddType.GetSelectedItem() as StringObject;
             tt.Type = selectedItem?.String?.ToLower() ?? "video";
             currentStreamType = tt.Type;
 
-            // 2. IMPORTANT: Sync the Encoder name from the UI widget before cache lookup
+            // IMPORTANT: Sync the Encoder name from the UI widget before cache lookup
             if (_factoryWidgets.TryGetValue("entEncoder", out var entObj) && entObj is Entry entEncoder)
             {
                 tt.EncoderSettings.Encoder = entEncoder.GetText();
@@ -472,7 +472,7 @@ public class TemplateEditorWindow : Window
 
             if (_factoryWidgets.TryGetValue("lbESEncoderParams", out var obj)) lb = obj as ListBox;
 
-            // 3. Look up the specific codec schema (e.g., libsvtav1)
+            // Look up the specific codec schema (e.g., libsvtav1)
             if (!string.IsNullOrEmpty(tt.EncoderSettings.Encoder) &&
                 _app.Cache.Codecs.TryGetValue(tt.EncoderSettings.Encoder, out var codec))
             {
@@ -501,7 +501,7 @@ public class TemplateEditorWindow : Window
 
         if (lb == null) return;
 
-        // 3. Pass currentStreamType to the picker so it filters correctly
+        // Pass currentStreamType to the picker so it filters correctly
         var picker = new PickerWindow(_app.Cache, PickerType.Parameter, (obj) =>
         {
             if (obj is PickerWindow.PickerResult res && res.Data is FFmpegParameter pSchema)
@@ -628,7 +628,7 @@ public class TemplateEditorWindow : Window
 
     private void _connectTemplateButtons()
     {
-        // 1. Encoder Template Button
+        // Encoder Template Button
         if (_factoryWidgets.TryGetValue("btnESLoadTemplate", out var btnES) && _template is TranscodingTemplate tt)
         {
             ((Button)btnES).OnClicked += (s, e) =>
@@ -638,7 +638,7 @@ public class TemplateEditorWindow : Window
             };  
         }
 
-        // 2. Filter Template Button
+        // Filter Template Button
         if (_factoryWidgets.TryGetValue("btnFSLoadTemplate", out var btnFS))
         {
             // Works for both Transcoding and Filter templates
@@ -675,7 +675,7 @@ public class TemplateEditorWindow : Window
             }
         }
 
-        // 3. Container Template Button
+        // Container Template Button
         if (_factoryWidgets.TryGetValue("btnCSLoadContainerTemplate", out var btnCS) && _template is ContainerTemplate ct)
         {
             ((Button)btnCS).OnClicked += (s, e) =>

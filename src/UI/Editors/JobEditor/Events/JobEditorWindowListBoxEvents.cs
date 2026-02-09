@@ -273,7 +273,7 @@ public partial class JobEditorWindow
                 // Pass the sync method as a callback for when the text changes
                 row = JobEditorUiFactory.CreateMetadataRow(key, entry.Value.ToString() ?? "", 
                     () => { lbStreamMeta.Remove(row); SyncMetadata(lbStreamMeta, stream.Metadata); }, // On Remove
-                    () => { SyncMetadata(lbStreamMeta, stream.Metadata); } // On Changed (Ensure factory supports this)
+                    () => { SyncMetadata(lbStreamMeta, stream.Metadata); } // On Changed (Makes sure factory supports this)
                 );
                 lbStreamMeta.Append(row);
             }

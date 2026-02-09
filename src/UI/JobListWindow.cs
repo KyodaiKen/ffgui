@@ -142,13 +142,13 @@ class JobListWindow : Window
         {
             var paths = new List<string>();
 
-            // 1. Get the raw pointer to the GdkFileList boxed record
+            // Get the raw pointer to the GdkFileList boxed record
             nint boxedPtr = args.Value.GetBoxed();
             if (boxedPtr == nint.Zero) return false;
 
             var listHandle = new GLib.Internal.SListUnownedHandle(boxedPtr);
 
-            // 3. Use Foreach with the proper Handle type
+            // Use Foreach with the proper Handle type
             GLib.Internal.SList.Foreach(listHandle, (filePtr, _) =>
                     {
                 if (filePtr != nint.Zero)
@@ -209,16 +209,16 @@ class JobListWindow : Window
     /* ####### Drag events ####### */
     private void OnDragUpdate(GestureDrag sender, GestureDrag.DragUpdateSignalArgs args)
     {
-        // 1. Get the starting point of the drag
+        // Get the starting point of the drag
         if (!sender.GetStartPoint(out double startX, out double startY)) 
             return;
 
-        // 2. Determine the selection rectangle boundaries
+        // Determine the selection rectangle boundaries
         double offsetY = args.OffsetY;
         double rectTop = offsetY > 0 ? startY : startY + offsetY;
         double rectBottom = rectTop + Math.Abs(offsetY);
 
-        // 3. Check for Control key modifier
+        // Check for Control key modifier
         // In GirCore, we get the current event from the gesture
         var currentEvent = sender.GetCurrentEvent();
         bool isCtrl = false;
@@ -228,7 +228,7 @@ class JobListWindow : Window
             isCtrl = state.HasFlag(ModifierType.ControlMask);
         }
 
-        // 4. Iterate through rows and check bounds
+        // Iterate through rows and check bounds
         var row = _jobListBox.GetFirstChild();
         while (row != null)
         {
@@ -456,13 +456,13 @@ class JobListWindow : Window
         {
             if (e.ResponseId == (int)ResponseType.Accept)
             {
-                // 1. Get the folder on the UI thread before jumping to a background task
+                // Get the folder on the UI thread before jumping to a background task
                 var folder = chooser.GetFile();
                 if (folder == null) return;
 
                 string folderPath = folder.GetPath() ?? "";
 
-                // 2. Wrap the heavy work in Task.Run to satisfy 'async' and keep UI smooth
+                // Wrap the heavy work in Task.Run to satisfy 'async' and keep UI smooth
                 var files = await Task.Run(() =>
                 {
                     var fileList = new List<string>();
@@ -479,7 +479,7 @@ class JobListWindow : Window
                     return fileList;
                 });
 
-                // 3. Await the job creation (which you've already made async)
+                // Await the job creation (which you've already made async)
                 await _createJobsFromFileList(files);
             }
             chooser.Destroy();
@@ -614,7 +614,7 @@ class JobListWindow : Window
     {
         GLib.Functions.IdleAdd(GLib.Constants.PRIORITY_DEFAULT, () =>
         {
-            // 1. Clear existing UI rows
+            // Clear existing UI rows
             var child = _jobListBox.GetFirstChild();
             while (child != null)
             {
@@ -623,12 +623,12 @@ class JobListWindow : Window
                 child = next;
             }
 
-            // 2. Clear our controller mapping
+            // Clear our controller mapping
             _jobRows.Clear();
 
             if (_app.Jobs == null) return false;
 
-            // 3. Rebuild list based on sorted IDs
+            // Rebuild list based on sorted IDs
             var sortedKeys = _app.Jobs.Keys.OrderBy(k => k);
             foreach (var key in sortedKeys)
             {
@@ -659,7 +659,7 @@ class JobListWindow : Window
         var row = _findRowById(id);
         if (row != null)
         {
-            // Ensure UI updates happen on the GTK main thread
+            // Make sure UI updates happen on the GTK main thread
             GLib.Functions.IdleAdd(0, () =>
             {
                 row.Refresh();
@@ -672,7 +672,7 @@ class JobListWindow : Window
     {
         var jobsToRemove = GetSelectedJobEntries();
 
-        // 2. Build the display string for the alert
+        // Build the display string for the alert
         string itemNames;
         if (jobsToRemove.Count <= 10)
         {

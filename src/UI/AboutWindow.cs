@@ -192,7 +192,7 @@ public class AboutWindow : Window
     """;
     public AboutWindow(FFGuiApp app, Window parent)
     {
-        // 1. Configure Window to be Modal and Blocking
+        // Configure Window to be Modal and Blocking
         Title = "About FFGui";
         TransientFor = parent; // Keeps it on top of the parent
         Modal = true;          // Blocks interaction with the parent

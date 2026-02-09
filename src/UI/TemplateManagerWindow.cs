@@ -83,7 +83,7 @@ public class TemplateManagerWindow : Window
         btnNew.MenuModel = menuModel;
 
         var actionGroup = new SimpleActionGroup();
-        // Fix: Follow JobRow's pattern for AddAction
+        // Follow JobRow's pattern for AddAction
         AddAction(actionGroup, "new_transcoding", (a, p) => _createNewTemplate(new TranscodingTemplate()));
         AddAction(actionGroup, "new_container", (a, p) => _createNewTemplate(new ContainerTemplate()));
         AddAction(actionGroup, "new_filter", (a, p) => _createNewTemplate(new FilterTemplate()));
@@ -291,14 +291,14 @@ public class TemplateManagerWindow : Window
         {
             var actionBox = new Box { Spacing = 4 };
 
-            // 1. Move Clone Button into the row (Available for everyone)
+            // Move Clone Button into the row (Available for everyone)
             var btnCloneRow = Button.NewFromIconName("edit-copy-symbolic");
             btnCloneRow.TooltipText = "Clone Template";
             btnCloneRow.AddCssClass("flat");
             btnCloneRow.OnClicked += (s, e) => _onCloneClicked(t); // Modified to accept template
             actionBox.Append(btnCloneRow);
 
-            // 2. Add Edit/Rename/Delete ONLY if not Read-Only
+            // Add Edit/Rename/Delete ONLY if not Read-Only
             if (!isReadOnly)
             {
                 var btnEdit = Button.NewFromIconName("document-edit-symbolic");
@@ -399,22 +399,14 @@ public class TemplateManagerWindow : Window
         var selectedTemplate = t ?? _getSelectedTemplate();
         if (selectedTemplate == null) return;
 
-        // FIX: Handle both Installed (Length=2) and Portable (Length=1) modes
+        // Handle both Installed (Length=2) and Portable (Length=1) modes
         string userPath;
         if (_app.TemplatePaths.Length > 1)
-        {
-            // Installed Mode: User templates are at index 1
-            userPath = _app.TemplatePaths[1];
-        }
+            userPath = _app.TemplatePaths[1]; // Installed Mode: User templates are at index 1
         else if (_app.TemplatePaths.Length == 1)
-        {
-            // Portable Mode: Templates are at index 0
-            userPath = _app.TemplatePaths[0];
-        }
+            userPath = _app.TemplatePaths[0]; // Portable Mode: Templates are at index 0
         else
-        {
-            return; // Should not happen
-        }
+            return;
 
         // Use the Name property we added to the model
         var filePath = Path.Combine(userPath, $"{selectedTemplate.Name}.yaml");

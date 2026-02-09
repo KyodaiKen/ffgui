@@ -45,19 +45,19 @@ static class ParameterRowFactory
     {
         var box = new Box { Spacing = 12, MarginStart = 6, MarginEnd = 6, MarginTop = 4, MarginBottom = 4 };
 
-        // 1. Label
+        // Label
         var lbl = new Label { Label_ = $"<b>{key}</b>", UseMarkup = true, Xalign = 0, WidthRequest = 120, Ellipsize = Pango.EllipsizeMode.End };
         if (!string.IsNullOrEmpty(schema?.Description)) lbl.TooltipText = schema.Description;
         box.Append(lbl);
 
-        // 2. Value Widget (using the factory below)
+        // Value Widget (using the factory below)
 
         var valueWidget = BuildValueWidget(key, value, schema, onChanged);
         valueWidget.Hexpand = true;
         box.Append(valueWidget);
         var row = new ParameterRow { Key = key, Schema = schema, ValueWidget = valueWidget };
 
-        // 3. Remove Button
+        // Remove Button
         var btnRemove = Button.NewFromIconName("user-trash-symbolic");
         btnRemove.AddCssClass("flat");
         btnRemove.OnClicked += (s, e) => onRemove(row);
