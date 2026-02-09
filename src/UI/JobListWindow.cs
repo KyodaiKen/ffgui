@@ -183,7 +183,11 @@ class JobListWindow : Window
 
         _runner = new JobRunner(_app);
 
-        _runner.OnJobStarted += (id, job) => _refreshJobRow(id);
+        _runner.OnJobStarted += (id, job) =>
+        {
+            _refreshJobRow(id);
+            ScrollToJob(id);
+        };
 
         _runner.OnJobProgressUpdated += (id, job, info, progress) =>
         {
@@ -909,5 +913,40 @@ class JobListWindow : Window
             .Where(idx => idx >= 0 && idx < sortedKeys.Count)
             .Select(idx => (Id: sortedKeys[idx], Job: _app.Jobs[sortedKeys[idx]]))
             .ToList();
+    }
+
+    private void ScrollToJob(int id)
+    {
+        // Run on Idle to ensure the UI has finished updating layout from the status change
+        GLib.Functions.IdleAdd(0, () =>
+        {
+            if (_jobRows.TryGetValue(id, out var row))
+            {
+                var widget = row.Widget;
+
+                // Compute the position of the row relative to the ListBox
+                if (widget.ComputeBounds(_jobListBox, out var bounds))
+                {
+                    var adjustment = _jobListBoxScroller.Vadjustment;
+
+                    double rowY = bounds.GetY();
+                    double rowHeight = bounds.GetHeight();
+                    double viewHeight = adjustment!.PageSize;
+                    double currentScroll = adjustment.Value;
+
+                    // Logic: 
+                    // 1. If row is above the view, scroll up to it.
+                    // 2. If row is below the view, scroll down to it.
+                    // 3. Optional: We scroll so the row is slightly centered or at the top.
+
+                    if (rowY < currentScroll || (rowY + rowHeight) > (currentScroll + viewHeight))
+                    {
+                        // Scroll to put the row at the top (or simply ensure visibility)
+                        adjustment.Value = rowY;
+                    }
+                }
+            }
+            return false;
+        });
     }
 }

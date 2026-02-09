@@ -59,7 +59,11 @@ public class JobRow
         grid.Attach(_progressBar, 1, 1, 2, 1);
 
         //ROW3: STATUS INFO
-        _lblStatusInfo = new() { Halign = Align.Start, CssClasses = ["job-lbl-status-info"] };
+        _lblStatusInfo = new()
+        {
+            Halign = Align.Start,
+            CssClasses = ["job-lbl-status-info"]
+        };
         grid.Attach(_lblStatusInfo, 1, 2, 2, 1);
         vbox.Append(grid);
 

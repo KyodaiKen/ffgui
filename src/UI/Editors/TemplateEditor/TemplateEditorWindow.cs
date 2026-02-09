@@ -4,6 +4,7 @@ using Gtk;
 using FFGui.Models;
 using System.Text;
 using FFGui.Core;
+using FFGui.Helpers;
 
 public class TemplateEditorWindow : Window
 {
@@ -257,13 +258,15 @@ public class TemplateEditorWindow : Window
             if (_factoryWidgets.TryGetValue("lbCSMuxerParams", out var lbObj) && lbObj is ListBox lbContainerParms)
             {
                 while (lbContainerParms.GetFirstChild() is Widget child) lbContainerParms.Remove(child);
-
                 foreach (var parm in ct.Parameters ?? [])
                 {
+                    FFmpegParameter? parmSchema = null;
+                    if (_app.Cache.Formats.TryGetValue(ct.Muxer, out var fmt))
+                        fmt.Parameters.TryGetValue(parm.Key, out parmSchema);
                     var row = ParameterRowFactory.CreateParameterRow(
                         key: parm.Key,
                         value: parm.Value,
-                        schema: _app.Cache.Formats[ct.Muxer].Parameters[parm.Key],
+                        schema: parmSchema,
                         onRemove: lbContainerParms.Remove,
                         onChanged: () => { }
                     );
