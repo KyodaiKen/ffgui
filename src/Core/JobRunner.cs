@@ -17,6 +17,7 @@ public class JobRunner
     private readonly List<Process> _activeProcesses = new();
     private readonly object _lock = new();
     private bool _isStopping = false;
+    private CancellationTokenSource? _cts;
 
     private readonly FFGuiApp _app;
     public bool IsRunning { get; private set; }
@@ -40,6 +41,9 @@ public class JobRunner
 
         _isStopping = false;
         IsRunning = true;
+        _cts?.Dispose();
+        _cts = new CancellationTokenSource();
+
         OnQueueStarted?.Invoke();
 
         // Filter jobs to run
@@ -68,8 +72,8 @@ public class JobRunner
         // Process Parallel Groups first (Order by ParallelGroup number)
         foreach (var group in parallelGroups)
         {
-            if (_isStopping) break;
-            var tasks = group.Select(kv => ExecuteJobAsync(kv.Key, kv.Value)).ToList();
+            if (_isStopping || _cts.Token.IsCancellationRequested) break;
+            var tasks = group.Select(kv => ExecuteJobAsync(kv.Key, kv.Value, _cts.Token)).ToList();
             await Task.WhenAll(tasks);
             completedCount += tasks.Count;
             OnTotalProgressChanged?.Invoke((double)completedCount / totalJobs);
@@ -78,8 +82,8 @@ public class JobRunner
         // Process Sequential Jobs (Group 0)
         foreach (var (id, job) in sequentialJobs)
         {
-            if (_isStopping) break;
-            await ExecuteJobAsync(id, job);
+            if (_isStopping || _cts.Token.IsCancellationRequested) break;
+            await ExecuteJobAsync(id, job, _cts.Token);
             completedCount++;
             OnTotalProgressChanged?.Invoke((double)completedCount / totalJobs);
         }
@@ -89,8 +93,9 @@ public class JobRunner
         OnQueueFinished?.Invoke();
     }
 
-    private async Task ExecuteJobAsync(int id, Job job)
+    private async Task ExecuteJobAsync(int id, Job job, CancellationToken token)
     {
+        if (token.IsCancellationRequested) return;
         job.Status = Job.JobStatus.Running;
         OnJobStarted?.Invoke(id, job);
 
@@ -166,6 +171,10 @@ public class JobRunner
             job.Status = process.ExitCode == 0 ? Job.JobStatus.Successful : Job.JobStatus.Failed;
             job.ErrorLog = errorLog.ToString();
         }
+        catch (OperationCanceledException)
+        {
+            job.Status = Job.JobStatus.Pending; // User stopped the queue
+        }
         catch (Exception ex)
         {
             Console.WriteLine($"Process Error: {ex.Message}");
@@ -174,10 +183,9 @@ public class JobRunner
         finally
         {
             // REMOVE FROM LIST: Make sure we clean up so Stop() doesn't try to close dead processes
-            lock (_lock)
-            {
-                _activeProcesses.Remove(process);
-            }
+            lock (_lock) { _activeProcesses.Remove(process); }
+            OnJobFinished?.Invoke(id, job);
+            await Task.Delay(200);
         }
 
         OnJobFinished?.Invoke(id, job);
@@ -186,6 +194,7 @@ public class JobRunner
     public void Stop(bool force = false)
     {
         _isStopping = true;
+        _cts?.Cancel();
         lock (_lock)
         {
             foreach (var p in _activeProcesses)

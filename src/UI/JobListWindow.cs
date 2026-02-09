@@ -928,21 +928,20 @@ class JobListWindow : Window
                 if (widget.ComputeBounds(_jobListBox, out var bounds))
                 {
                     var adjustment = _jobListBoxScroller.Vadjustment;
-
-                    double rowY = bounds.GetY();
-                    double rowHeight = bounds.GetHeight();
-                    double viewHeight = adjustment!.PageSize;
-                    double currentScroll = adjustment.Value;
-
-                    // Logic: 
-                    // 1. If row is above the view, scroll up to it.
-                    // 2. If row is below the view, scroll down to it.
-                    // 3. Optional: We scroll so the row is slightly centered or at the top.
-
-                    if (rowY < currentScroll || (rowY + rowHeight) > (currentScroll + viewHeight))
+                    if (adjustment is not null)
                     {
-                        // Scroll to put the row at the top (or simply ensure visibility)
-                        adjustment.Value = rowY;
+                        double rowY = bounds.GetY();
+                        double rowHeight = bounds.GetHeight();
+                        double viewHeight = adjustment.PageSize;
+                        double currentScroll = adjustment.Value;
+
+                        // Logic: 
+                        // - If row is above the view, scroll up to it.
+                        // - If row is below the view, scroll down to it.
+                        // - Optional: We scroll so the row is slightly centered or at the top.
+
+                        if (rowY < currentScroll || (rowY + rowHeight) > (currentScroll + viewHeight))
+                            adjustment.Value = rowY; // Scroll to put the row at the top
                     }
                 }
             }
