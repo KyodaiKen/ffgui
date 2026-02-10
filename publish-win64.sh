@@ -8,7 +8,7 @@ LOCAL_THEME_SOURCE="./theme/$THEME_NAME"
 
 echo "--- Building ---"
 rm -rf "$PUBLISH_DIR"
-"$DOTNET_EXE" publish -c Release -r win-x64 -p:SelfContained=false -p:PublishSingleFile=true
+"$DOTNET_EXE" publish --tl:off -c Release -r win-x64 -p:SelfContained=false -p:PublishSingleFile=true
 
 echo "--- Copying DLLs ---"
 
