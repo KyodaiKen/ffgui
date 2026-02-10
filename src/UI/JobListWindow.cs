@@ -280,6 +280,7 @@ class JobListWindow : Window
         _setUiLocked(true);
         try
         {
+            _retryFailedButton.SetVisible(false);
             await _runner.RunQueueAsync(retryFailedOnly: false);
         }
         finally
