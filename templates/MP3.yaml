@@ -1,4 +1,3 @@
 Muxer: mp3
-Parameters:
-  movflags: faststart
+Parameters: {}
 Description: MP3

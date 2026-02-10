@@ -1,0 +1,9 @@
+Type: video
+EncoderSettings:
+  Encoder: libsvtav1
+  Parameters:
+    crf: 36
+    preset: 0
+  UsesComplexFilters: false
+  Filters: []
+Description: ''
