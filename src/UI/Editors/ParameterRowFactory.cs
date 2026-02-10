@@ -187,18 +187,19 @@ static class ParameterRowFactory
 
             var spin = SpinButton.New(adj, step, (uint)(isFloat ? 6 : 0)); // 6 digits for floats
             spin.Numeric = true;
-            Action forceSync = () =>
-            {
-                spin.Update();
-                // We pass true here to ignore the _isUpdatingUi lock
-                onChanged?.Invoke();
-            };
-
-            spin.OnNotify += (s, e) =>
-            {
-                if (e.Pspec.GetName() == "text") forceSync();
-            };
             return spin;
+        }
+
+        // RATIONAL
+        if (pType.Contains("rational"))
+        {
+            var entry = new Entry
+            {
+                Text_ = value?.ToString() ?? "",
+                PlaceholderText = "4:3, 60000/1001"
+            };
+            entry.OnChanged += (s, e) => onChanged?.Invoke();
+            return entry;
         }
 
         // BOOLEAN
