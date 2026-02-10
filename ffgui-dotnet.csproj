@@ -12,6 +12,8 @@
     <ApplicationIcon>ffgui.ico</ApplicationIcon>
     <PublishDir Condition="'$(RuntimeIdentifier)' == 'win-x64'">publish-win\</PublishDir>
     <PublishDir Condition="'$(RuntimeIdentifier)' == 'linux-x64'">publish-linux\</PublishDir>
+    <BaseVersion>0.1.0</BaseVersion>
+    <Deterministic>false</Deterministic>
   </PropertyGroup>
 
   <ItemGroup>
@@ -38,6 +40,50 @@
 
     <Exec Condition="$(RuntimeIdentifier.StartsWith('linux-')) AND '$(PublishDir)' != ''"
           Command="chmod +x $(PublishDir)setup.sh" />
+  </Target>
+
+  <Target Name="SmartVersionIncrement" BeforeTargets="PreBuildEvent">
+    <PropertyGroup>
+      <VersionFile>version.txt</VersionFile>
+      <HashFile>hash.cache</HashFile>
+    </PropertyGroup>
+
+    <ItemGroup>
+      <SourceFiles Include="**/*.cs" Exclude="obj/**/*.*;bin/**/*.*" />
+    </ItemGroup>
+
+    <Hash ItemsToHash="@(SourceFiles)">
+      <Output TaskParameter="HashResult" PropertyName="NewHash" />
+    </Hash>
+
+    <ReadLinesFromFile File="$(HashFile)" ContinueOnError="true">
+      <Output TaskParameter="Lines" PropertyName="OldHash" />
+    </ReadLinesFromFile>
+    <ReadLinesFromFile File="$(VersionFile)" ContinueOnError="true">
+      <Output TaskParameter="Lines" ItemName="CurrentVersion" />
+    </ReadLinesFromFile>
+
+    <PropertyGroup>
+      <IncrVersion Condition="'@(CurrentVersion)' == ''">1</IncrVersion>
+      <IncrVersion Condition="'@(CurrentVersion)' != ''">@(CurrentVersion)</IncrVersion>
+      
+      <HasChanged>false</HasChanged>
+      <HasChanged Condition="'$(NewHash)' != '$(OldHash)'">true</HasChanged>
+      
+      <IncrVersion Condition="'$(HasChanged)' == 'true'">$([MSBuild]::Add($(IncrVersion), 1))</IncrVersion>
+      <FullVersion>$(BaseVersion).$(IncrVersion)</FullVersion>
+    </PropertyGroup>
+
+    <PropertyGroup>
+      <Version>$(FullVersion)</Version>
+      <AssemblyVersion>$(FullVersion)</AssemblyVersion>
+      <FileVersion>$(FullVersion)</FileVersion>
+    </PropertyGroup>
+
+    <WriteLinesToFile File="$(VersionFile)" Lines="$(IncrVersion)" Overwrite="true" Condition="'$(HasChanged)' == 'true'" />
+    <WriteLinesToFile File="$(HashFile)" Lines="$(NewHash)" Overwrite="true" Condition="'$(HasChanged)' == 'true'" />
+
+    <Message Importance="high" Text="*** BUILD VERSION: $(FullVersion) (Code Changed: $(HasChanged)) ***" />
   </Target>
 
 </Project>

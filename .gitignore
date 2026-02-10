@@ -9,6 +9,6 @@ gtk-icons
 theme
 publish-*/
 7z-win.sfx
-
-
+hash.cache
+version.txt
 lng.psv
