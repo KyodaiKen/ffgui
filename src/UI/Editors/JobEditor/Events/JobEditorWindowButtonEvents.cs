@@ -351,7 +351,13 @@ public partial class JobEditorWindow
 
                                     var newRow = ParameterRowFactory.CreateParameterRow(
                                         result.Key,
-                                        paramSchema.Default,
+                                        paramSchema.Default switch
+                                        {
+                                            FFmpegValueLong v => v.Value.ToString(),
+                                            FFmpegValueDouble v => v.Value.ToString("G"),
+                                            FFmpegValueString v => v.Value,
+                                            _ => "N/A"
+                                        },
                                         paramSchema,
                                         (r) => { lbEP.Remove(r); _syncEncoderParamsToJob(); },
                                         () => _syncEncoderParamsToJob(ignoreLock: true) // Standard value changes respect the lock
