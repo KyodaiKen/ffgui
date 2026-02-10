@@ -74,7 +74,13 @@ public class FilterParameterEditor : Window
         var picker = new PickerWindow(_app.Cache, PickerType.Parameter, (obj) =>
         {
             if (obj is PickerWindow.PickerResult res && res.Data is FFmpegParameter pSchema)
-                _addParamRow(res.Key, pSchema.Default, pSchema);
+                _addParamRow(res.Key, pSchema.Default switch
+                {
+                    FFmpegValueLong v => v.Value.ToString(),
+                    FFmpegValueDouble v => v.Value.ToString("G"),
+                    FFmpegValueString v => v.Value,
+                    _ => "N/A"
+                }, pSchema);
         }, contextData: _schema);
 
         picker.SetTransientFor(this);
