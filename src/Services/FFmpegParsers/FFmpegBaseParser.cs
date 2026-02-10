@@ -145,7 +145,16 @@ public abstract class FFmpegBaseParser
         clean = Regex.Replace(clean, @"\(default.*?\)", "");
         clean = Regex.Replace(clean.Trim(), @"^[EDVASFTR\.]{5,}\s+", "");
 
-        return (clean.Trim(), ToValue(minM.Groups[1].Value), ToValue(maxM.Groups[1].Value), ToValue(defM.Groups[1].Value));
+        IFFmpegValue? defValue = defM.Success
+                ? ToValue(defM.Groups[1].Value)
+                : new FFmpegValueString("");
+
+        return (
+            clean.Trim(),
+            ToValue(minM.Groups[1].Value),
+            ToValue(maxM.Groups[1].Value),
+            defValue
+        );
     }
 
     protected FFmpegContext MapContext(string f)

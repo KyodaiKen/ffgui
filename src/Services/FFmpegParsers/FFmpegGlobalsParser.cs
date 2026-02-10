@@ -122,10 +122,10 @@ public class FFmpegGlobalsParser : FFmpegBaseParser
                     // Route based on the current header category
                     switch (currentSection)
                     {
-                        case "video": globals.Video[name] = param; break;
-                        case "audio": globals.Audio[name] = param; break;
-                        case "subtitle": globals.Subtitle[name] = param; break;
-                        case "per_stream": globals.PerStream[name] = param; break;
+                        case "video": SafeAdd(globals.Video, name, param); break;
+                        case "audio": SafeAdd(globals.Audio, name, param); break;
+                        case "subtitle": SafeAdd(globals.Subtitle, name, param); break;
+                        case "per_stream": SafeAdd(globals.PerStream, name, param); break;
                     }
                 }
             }
@@ -134,15 +134,42 @@ public class FFmpegGlobalsParser : FFmpegBaseParser
         return globals;
     }
 
+    //Helpers
     private void RouteParameter(FFmpegGlobalParameters globals, string name, FFmpegParameter param)
     {
-        // Python logic: if "V" in flags, it goes to video, etc.
         bool routed = false;
-        if (param.Context.Video) { globals.Video[name] = param; routed = true; }
-        if (param.Context.Audio) { globals.Audio[name] = param; routed = true; }
-        if (param.Context.Subtitle) { globals.Subtitle[name] = param; routed = true; }
-        
+        if (param.Context.Video) { SafeAdd(globals.Video, name, param); routed = true; }
+        if (param.Context.Audio) { SafeAdd(globals.Audio, name, param); routed = true; }
+        if (param.Context.Subtitle) { SafeAdd(globals.Subtitle, name, param); routed = true; }
+
         // If no specific media flag, it's a general stream option
-        if (!routed) globals.PerStream[name] = param;
+        if (!routed) SafeAdd(globals.PerStream, name, param);
+    }
+
+    private void SafeAdd(Dictionary<string, FFmpegParameter> dict, string name, FFmpegParameter param)
+    {
+        if (dict.ContainsKey(name))
+        {
+            // If the description and type are identical, it's a true redundant duplicate. Skip it.
+            if (dict[name].Description == param.Description && dict[name].Type == param.Type)
+                return;
+
+            // Otherwise, add with a suffix so the user can see both in the UI.
+            // We use a suffix like " (AV)" to indicate it's an AVOption version.
+            string uniqueName = $"{name} (AV)";
+
+            // Ensure even the suffix doesn't collide (unlikely, but safe)
+            int counter = 1;
+            while (dict.ContainsKey(uniqueName))
+            {
+                uniqueName = $"{name} (AV-{counter++})";
+            }
+
+            dict[uniqueName] = param;
+        }
+        else
+        {
+            dict[name] = param;
+        }
     }
 }

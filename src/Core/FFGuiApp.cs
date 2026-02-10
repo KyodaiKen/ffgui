@@ -340,10 +340,10 @@ public class FFGuiApp : Gtk.Application
     private void LaunchMainWindow()
     {
         //TESTING
-        //#if DEBUG
-        //if (Cache.Codecs.TryGetValue("aac", out var obj))
+        // #if DEBUG
+        // if (Cache.Globals.Video.TryGetValue("aspect", out var obj))
         //   Console.WriteLine(obj.ToYaml());
-        //#endif
+        // #endif
 
         if (_mainWindow != null)
         {
