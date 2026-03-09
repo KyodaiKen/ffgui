@@ -39,20 +39,26 @@ public class FFmpegMediaInfo
             bitrateStr = $", ~{br / 1000} kbps";
         }
 
-        string codecLong = stream.GetProperty("codec_long_name").GetString() ?? "Unknown";
-        string type = stream.GetProperty("codec_type").GetString() ?? "unknown";
+        string codecLong = stream.TryGetProperty("codec_long_name", out var cl) ? cl.GetString() ?? "Unknown" : "Unknown";
+        string type = stream.TryGetProperty("codec_type", out var t) ? t.GetString() ?? "unknown" : "unknown";
 
         switch (type)
         {
             case "audio":
-                string sr = stream.GetProperty("sample_rate").GetString() ?? "?";
-                int ch = stream.TryGetProperty("channels", out var c) ? c.GetInt32() : 0;
-                return [$"(Audio) {codecLong}", $"{ch}ch, {sr} Hz{bitrateStr}"];
+                if (stream.TryGetProperty("sample_rate", out var sr))
+                {
+                    int ch = stream.TryGetProperty("channels", out var c) ? c.GetInt32() : 0;
+                    return [$"(Audio) {codecLong}", $"{ch}ch, {sr.GetString() ?? "?"} Hz{bitrateStr}"];
+                }
+                else
+                {
+                    return ["(Audio) Unknown"];
+                }
             case "video":
-                int width = stream.GetProperty("width").GetInt32();
-                int height = stream.GetProperty("height").GetInt32();
-                string pixFmt = stream.GetProperty("pix_fmt").GetString() ?? "unknown";
-                string fps = stream.GetProperty("avg_frame_rate").GetString() ?? "0";
+                int width = stream.TryGetProperty("width", out var w) ? w.GetInt32() : 0;
+                int height = stream.TryGetProperty("height", out var h) ? h.GetInt32() : 0;
+                string pixFmt = stream.TryGetProperty("pix_fmt", out var p) ? p.GetString() ?? "unknown" : "unknown";
+                string fps = stream.TryGetProperty("avg_frame_rate", out var f) ? f.GetString() ?? "unknown" : "unknown";
                 return [$"(Video) {codecLong}", $"{width}x{height}, {pixFmt}, {fps} FPS{bitrateStr}"];
             default:
                 return [$"({type}): {codecLong}]", $"{bitrateStr}"];
