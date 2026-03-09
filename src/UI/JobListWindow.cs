@@ -264,6 +264,7 @@ class JobListWindow : Window
     private async void OnButtonRetryFailedClicked(Button sender, EventArgs args)
     {
         _setUiLocked(true);
+        _retryFailedButton.SetVisible(false);
         try
         {
             await _runner.RunQueueAsync(retryFailedOnly: true);
