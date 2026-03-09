@@ -66,6 +66,33 @@ A powerful, template-driven media converter powered by GTK4 and FFmpeg, written 
 
 ---
 
+### Installation from Binaries (See Releases)
+
+#### Windows
+1. Extract wherever you want, for example c:\Program Files\FFgui (run as administrator in this case)
+2. Go to the extraction path
+3. Make sure you have the .NET 10 runtime installed. There is a url file in the archive to directly launch the download.
+4. Install the runtime.
+5. Pin ffgui.exe to wherever you want or create a desktop shortcut
+6. Download a FFmpeg Windows Build: https://ffmpeg.org/download.html#build-windows
+7. Extract the contents of the bin folder or the folder with the exe and dll files to your installation folder under codecs -> ffmpeg (create the ffmpeg folder)
+8. Run FFgui
+9. Wait for the introspection to finish
+10. Enjoy
+
+#### Linux
+
+1. Make sure you have ffmpeg and dotnet 10 runtime or sdk installed
+2. Extract `tar xvf ffgui-linux-x64.tar.xz`
+3. Go to the extracted files `cd publish-linux`
+4. Run setup `sudo ./setup.sh` to install it in /opt/
+5. Delete the install packages
+6. Run it from your app menu
+7. Wait for the introspection to finish
+8. Enjoy!
+
+PS: You can run setup.sh in opt at any time again to uninstall. The reinstall option won't work in that case of course, that only works from a freshly downloaded package. It will basically do the same as uninstall and then error out.
+
 ## 🛠 Project Structure
 
 The project has been reorganized into a clean `src/` architecture:
@@ -75,8 +102,6 @@ The project has been reorganized into a clean `src/` architecture:
 * **`src/UI/`**: GTK4 window definitions and custom widgets (JobSetup, TemplateEditor, etc.).
 * **`src/Helpers/`**: Utilities for YAML serialization, shell execution, and path resolution.
 * **`templates/`**: Default transcoding profiles included with the application.
-
-
 
 ---
 
