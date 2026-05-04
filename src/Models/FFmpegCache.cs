@@ -119,6 +119,7 @@ public partial record FFmpegCodecFlags
     public bool Audio;
     public bool Subtitle;
     public bool Lossy;
+    public bool HardwareAvailable;
 }
 
 [MemoryPackable]

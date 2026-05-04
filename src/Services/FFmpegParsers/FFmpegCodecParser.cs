@@ -53,11 +53,6 @@ public class FFmpegCodecParser : FFmpegBaseParser
                     rogueNames.Add(mainName);
                 }
             }
-            else if (!rogueNames.Contains(mainName))
-            {
-                // Standalone codec (e.g., libx264)
-                UpdateOrCreateCodec(codecMap, mainName, descrFull.Trim(), flagsRaw, flagsRaw[0] == 'D', flagsRaw[1] == 'E');
-            }
         }
 
         // Remove any generic parents that were flagged
@@ -78,6 +73,12 @@ public class FFmpegCodecParser : FFmpegBaseParser
 
             await ProbeHelp(name, codec, true);  // Probe Encoder
             await ProbeHelp(name, codec, false); // Probe Decoder
+
+            // If we are dealing with a hardware codec, check if the hardware is actually supported
+            if (((string[])["vaapi", "amf", "qsv", "nvenc"]).Any(k => name.Contains(k)))
+            {
+                await ProbeHwCodec(name, codec);
+            }
 
             codecMap[name] = codec; // Make sure persistence if FFmpegCodec is a struct
         }
@@ -119,6 +120,117 @@ public class FFmpegCodecParser : FFmpegBaseParser
                     {
                         existingParam.Options[opt.Key] = opt.Value;
                     }
+                }
+            }
+        }
+    }
+
+    private async Task ProbeHwCodec(string name, FFmpegCodec codec)
+    {
+        // Path.GetTempPath() automatically resolves to:
+        // Windows: %TMP% or %TEMP% (e.g., C:\Users\User\AppData\Local\Temp\)
+        // Linux: /tmp/
+        // macOS: /var/folders/...
+        string tempFile = Path.Combine(Path.GetTempPath(), $"ffgui_probe_{Guid.NewGuid():N}.mp4");
+
+        try
+        {
+            bool hwEncodeSuccess = false;
+
+            // --- 1. HARDWARE ENCODING TEST ---
+            if (codec.Flags.Encoder)
+            {
+                // Note: -y automatically overwrites the file if it exists.
+                string hwEncodeArgs = $"-y -f lavfi -i color=c=blue:s=1280x720:r=24 -t 1 -c:v {name} \"{tempFile}\"";
+
+                try
+                {
+                    await RunCmdAsync(hwEncodeArgs);
+
+                    // Verify the file was actually created and is not empty
+                    if (File.Exists(tempFile) && new FileInfo(tempFile).Length > 0)
+                    {
+                        hwEncodeSuccess = true;
+                        codec.Flags.HardwareAvailable = true;
+                    }
+                }
+                catch
+                {
+                    // RunCmdAsync likely threw an exception on non-zero exit code
+                    hwEncodeSuccess = false;
+                }
+            }
+
+            // --- 2. CPU ENCODING FALLBACK ---
+            // If HW encoding failed (or wasn't attempted because this is only a decoder), 
+            // we MUST generate the file via CPU so the decode test has a valid input file.
+            if (!File.Exists(tempFile) || new FileInfo(tempFile).Length == 0)
+            {
+                string cpuEncodeArgs = $"-y -f lavfi -i color=c=blue:s=1280x720:r=24 -t 1 -c:v libx264 \"{tempFile}\"";
+
+                try
+                {
+                    await RunCmdAsync(cpuEncodeArgs);
+                }
+                catch
+                {
+                    // If CPU encoding fails, FFmpeg is likely completely broken or missing. 
+                    // We cannot test decoding.
+                    return;
+                }
+            }
+
+            // Ensure the file is ready before proceeding
+            if (!File.Exists(tempFile)) return;
+
+            // --- 3. HARDWARE DECODING TEST ---
+            if (codec.Flags.Decoder)
+            {
+                // Use -hwaccel auto and explicitly test the specific decoder name
+                // Outputting to -f null - prevents disk write bottlenecks
+                string hwDecodeArgs = $"-hwaccel auto -c:v {name} -i \"{tempFile}\" -f null -";
+
+                try
+                {
+                    string decodeOutput = await RunCmdAsync(hwDecodeArgs);
+
+                    // Some implementations of RunCmdAsync might return an error string instead of throwing.
+                    // Check if the output indicates a missing decoder or initialization failure.
+                    if (string.IsNullOrWhiteSpace(decodeOutput) || decodeOutput.Contains("Unknown decoder"))
+                    {
+                        if (!codec.Flags.Encoder || !hwEncodeSuccess)
+                        {
+                            codec.Flags.HardwareAvailable = false;
+                        }
+                    }
+                    else
+                    {
+                        codec.Flags.HardwareAvailable = true;
+                    }
+                }
+                catch
+                {
+                    // If decode fails, only set to false if the encode phase didn't already prove HW availability
+                    if (!codec.Flags.Encoder || !hwEncodeSuccess)
+                    {
+                        codec.Flags.HardwareAvailable = false;
+                    }
+                }
+            }
+        }
+        finally
+        {
+            // --- 4. CLEANUP ---
+            if (File.Exists(tempFile))
+            {
+                try
+                {
+                    File.Delete(tempFile);
+                }
+                catch
+                {
+                    // Suppress deletion errors (e.g., if the file is momentarily locked by the OS)
+                    // in a background probe method to prevent app crashes.
                 }
             }
         }
